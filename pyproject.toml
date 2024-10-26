@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "stone"
+version = "0.1.0"
+description = ""
+authors = ["Sander Land"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10,<3.13"
+PySide6 = "^6.5.0"
+pyqtgraph = "^0.13.7"
+
+
+[tool.poetry.scripts]
+stone = "stone.main:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
