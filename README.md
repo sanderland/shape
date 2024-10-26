@@ -12,7 +12,7 @@ This is an experimental project, and is unlikely to ever become very polished.
 
 ## Usage
 
-* Run `stone` to start the app, or use `python stone/main.py`
+* Run `shape` to start the app, or use `python shape/main.py`
 
 ## Manual
 

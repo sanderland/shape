@@ -12,7 +12,7 @@ pyqtgraph = "^0.13.7"
 
 
 [tool.poetry.scripts]
-stone = "shape.main:main"
+shape = "shape.main:main"
 
 [build-system]
 requires = ["poetry-core"]

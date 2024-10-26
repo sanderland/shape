@@ -26,7 +26,7 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(MAIN_STYLESHEET)
         self.katago_engine = None
         self.game_logic = GameLogic()
-        self.setWindowTitle("STONE - Play Go with AI Feedback")
+        self.setWindowTitle("SHAPE - Play Go with AI Feedback")
         self.setFocusPolicy(Qt.StrongFocus)
         self.setup_ui(self.game_logic)
         self.connect_signals()

@@ -25,7 +25,7 @@ def excepthook(cls, exception, traceback_obj):
 # sys.excepthook = excepthook
 
 
-class STONEApp:
+class SHAPEApp:
     def __init__(self):
         self.app = QApplication(sys.argv)
         self.main_window = MainWindow()
@@ -62,7 +62,7 @@ class STONEApp:
         logger.error(message)
 
 def main():
-    stone = STONEApp()
+    stone = SHAPEApp()
     sys.exit(shape.run())
 
 
