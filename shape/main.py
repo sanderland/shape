@@ -6,9 +6,9 @@ import traceback
 
 from PySide6.QtWidgets import QApplication
 
-from stone.katago.engine import KataGoEngine
-from stone.ui.main_window import MainWindow
-from stone.utils import setup_logging
+from shape.katago.engine import KataGoEngine
+from shape.ui.main_window import MainWindow
+from shape.utils import setup_logging
 
 logger = setup_logging()
 
@@ -25,7 +25,7 @@ def excepthook(cls, exception, traceback_obj):
 # sys.excepthook = excepthook
 
 
-class STONEApp:
+class SHAPEApp:
     def __init__(self):
         self.app = QApplication(sys.argv)
         self.main_window = MainWindow()
@@ -62,8 +62,8 @@ class STONEApp:
         logger.error(message)
 
 def main():
-    stone = STONEApp()
-    sys.exit(stone.run())
+    shape = SHAPEApp()
+    sys.exit(shape.run())
 
 
 if __name__ == "__main__":

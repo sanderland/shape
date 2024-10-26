@@ -1,19 +1,19 @@
 import logging
 
 import numpy as np
-from PySide6.QtCore import QSize, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import QSize, Qt, QTimer, Signal, Slot, QEvent
 from PySide6.QtGui import QAction, QKeyEvent, QKeySequence
 from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout, QHBoxLayout, QLabel,
                                QMainWindow, QMenu, QMenuBar, QPushButton, QSizePolicy, QSpinBox, QStatusBar, QTabWidget,
                                QVBoxLayout, QWidget)
 
-from stone.game_logic import GameLogic
-from stone.ui.board_view import BoardView
-from stone.ui.tab_analysis import AnalysisPanel
-from stone.ui.tab_config import ConfigPanel
-from stone.ui.tab_main_control import ControlPanel
-from stone.ui.ui_utils import MAIN_STYLESHEET
-from stone.utils import setup_logging
+from shape.game_logic import GameLogic
+from shape.ui.board_view import BoardView
+from shape.ui.tab_analysis import AnalysisPanel
+from shape.ui.tab_config import ConfigPanel
+from shape.ui.tab_main_control import ControlPanel
+from shape.ui.ui_utils import MAIN_STYLESHEET
+from shape.utils import setup_logging
 
 logger = setup_logging()
 
@@ -26,7 +26,7 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(MAIN_STYLESHEET)
         self.katago_engine = None
         self.game_logic = GameLogic()
-        self.setWindowTitle("STONE - Play Go with AI Feedback")
+        self.setWindowTitle("SHAPE - Play Go with AI Feedback")
         self.setFocusPolicy(Qt.StrongFocus)
         self.setup_ui(self.game_logic)
         self.connect_signals()
@@ -229,11 +229,14 @@ class MainWindow(QMainWindow):
         right_panel = QVBoxLayout()
 
         self.board_view = BoardView(self)
+        self.board_view.setFocusPolicy(Qt.StrongFocus)
+        self.board_view.installEventFilter(self)
         left_panel.addWidget(self.board_view, 1)
 
         nav_layout = QHBoxLayout()
         nav_layout.addWidget(QPushButton("Previous", clicked=self.on_prev_move))
         nav_layout.addWidget(QPushButton("Next", clicked=self.on_next_move))
+        nav_layout.addWidget(QPushButton("Pass", clicked=self.on_pass_move))  # Add Pass button
         left_panel.addLayout(nav_layout)
 
         self.create_right_panel_tabs(right_panel)
@@ -249,19 +252,19 @@ class MainWindow(QMainWindow):
 
         # Play tab
         play_tab = QWidget()
-        self.control_panel = ControlPanel()
+        self.control_panel = ControlPanel(self)
         play_tab.setLayout(self.control_panel)
         self.tab_widget.addTab(play_tab, "Play")
 
         # AI Analysis tab
         ai_analysis_tab = QWidget()
-        self.analysis_panel = AnalysisPanel()
+        self.analysis_panel = AnalysisPanel(self)
         ai_analysis_tab.setLayout(self.analysis_panel)
         self.tab_widget.addTab(ai_analysis_tab, "AI Analysis")
 
         # Settings tab
         settings_tab = QWidget()
-        self.config_panel = ConfigPanel()
+        self.config_panel = ConfigPanel(self)
         settings_tab.setLayout(self.config_panel)
         self.tab_widget.addTab(settings_tab, "Settings")
 
@@ -325,10 +328,30 @@ class MainWindow(QMainWindow):
         next_shortcut.triggered.connect(self.on_next_move)
         self.addAction(next_shortcut)
 
+        pass_shortcut = QAction("Pass Move", self)
+        pass_shortcut.setShortcut(QKeySequence(Qt.Key_P))
+        pass_shortcut.triggered.connect(self.on_pass_move)
+        self.addAction(pass_shortcut)
+
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key_Left:
             self.on_prev_move()
         elif event.key() == Qt.Key_Right:
             self.on_next_move()
+        elif event.key() == Qt.Key_P:
+            self.on_pass_move()
         else:
             super().keyPressEvent(event)
+
+    def on_pass_move(self):
+        if self.game_logic.make_move("pass"):
+            self.update_state()
+
+    def eventFilter(self, obj, event):
+        if obj == self.board_view and event.type() == QEvent.Wheel:
+            if event.angleDelta().y() > 0:
+                self.on_prev_move()
+            elif event.angleDelta().y() < 0:
+                self.on_next_move()
+            return True
+        return super().eventFilter(obj, event)

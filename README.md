@@ -1,6 +1,6 @@
-# STONE: Strategic Training & Optimization for Novice Enlightenment
+# SHAPE: Strategic Habits And Personalized Evaluation for Go
 
-STONE is an app to play Go with AI feedback, specifically designed to point out typical bad habits for your current skill level.
+SHAPE is an app to play Go with AI feedback, specifically designed to point out typical bad habits for your current skill level.
 
 This is an experimental project, and is unlikely to ever become very polished.
 
@@ -12,7 +12,7 @@ This is an experimental project, and is unlikely to ever become very polished.
 
 ## Usage
 
-* Run `stone` to start the app, or use `python stone/main.py`
+* Run `shape` to start the app, or use `python shape/main.py`
 
 ## Manual
 
@@ -25,3 +25,5 @@ The most important settings are:
 The game will automatically halt when a typical mistake is made by you, allowing you to analyze, undo, or just continue.
 
 Keep in mind that the techniques used are more likely to be helpful up to low-dan levels, and may not be helpful at all at high levels.
+
+

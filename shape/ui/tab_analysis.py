@@ -3,10 +3,10 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import QFrame, QHeaderView, QLabel, QTableWidget, QTableWidgetItem, QVBoxLayout
 
-from stone.game_logic import GameLogic
-from stone.ui.tab_main_control import ControlPanel
-from stone.ui.ui_utils import SettingsTab, create_double_spin_box, create_spin_box
-from stone.utils import setup_logging
+from shape.game_logic import GameLogic
+from shape.ui.tab_main_control import ControlPanel
+from shape.ui.ui_utils import SettingsTab, create_double_spin_box, create_spin_box
+from shape.utils import setup_logging
 
 from .score_graph import ScoreGraph
 

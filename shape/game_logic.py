@@ -6,9 +6,51 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from stone.utils import setup_logging
+from shape.utils import setup_logging
 
 logger = setup_logging()
+
+def get_top_moves(
+    policy: np.ndarray | List[float],
+    board_size: int,
+    secondary_data: tuple[np.ndarray, ...] = (),
+    top_k: int = 10000,
+    top_p: float = 1e9,
+    min_p: float = 0.0,
+    exclude_pass: bool = True,
+) -> Tuple[List[Tuple[str, float]], str]:
+
+    size = board_size
+    moves = []
+    for i, prob in enumerate(policy[:-1]):  # Exclude the last element (pass)
+        if prob > 0:
+            row = i // size
+            col = i % size
+            move = GameNode.rowcol_to_bw(row, col, size)
+            moves.append((move, prob) + tuple(d[i] for d in secondary_data))
+    if policy[-1] > 0 and not exclude_pass:  # Add pass move if its probability is positive
+        moves.append(("pass", policy[-1]) + tuple(d[-1] for d in secondary_data))
+    
+    moves.sort(key=lambda x: x[1], reverse=True)
+    
+    total_prob = 0
+    top_moves = []
+    highest_prob = moves[0][1] if moves else 0
+
+    for i, (move, prob, *data) in enumerate(moves, 1):
+        if prob < min_p * highest_prob:
+            return top_moves, "min_p"
+
+        top_moves.append((move, prob, *data))
+        total_prob += prob
+
+        if i == top_k:
+            return top_moves, "top_k"
+        if total_prob >= top_p:
+            return top_moves, "top_p"
+
+    return top_moves, "all"
+
 
 
 class Analysis:
@@ -61,7 +103,7 @@ class Analysis:
 
         highest_prob = policy_data[0][1]
         for i, (move, prob) in enumerate(policy_data, 1):
-            if move.lower() == "pass":
+            if move == "pass":
                 continue
 
             if prob < min_p * highest_prob:
@@ -128,7 +170,7 @@ class GameNode:
 
     @staticmethod
     def bw_to_rowcol(move_str: str, board_size: int) -> Tuple[Optional[int], Optional[int]]:
-        if move_str.lower() == "pass":
+        if move_str == "pass":
             return None, None
 
         col = ord(move_str[0].upper()) - ord("A")
@@ -181,7 +223,7 @@ class GameNode:
         return None
 
     def _parse_move(self, move_str):
-        if move_str.lower() == "pass":
+        if move_str == "pass":
             return None, None
 
         col = ord(move_str[0].upper()) - ord("A")
@@ -366,7 +408,7 @@ class GameLogic:
         sgf_content += f"PB[{player_names['B']}]PW[{player_names['W']}]"
 
         for bw, coords in self.move_history:
-            if coords.lower() == "pass":
+            if coords == "pass":
                 sgf_content += f";{bw}[]"
             else:
                 row, col = GameNode.bw_to_rowcol(coords, self.board_size)
@@ -404,9 +446,10 @@ class GameLogic:
         self, policy: str, top_k: int = 1000, top_p: float = 1.0, min_p: float = 0.0
     ) -> Tuple[List[Tuple[str, float]], str]:
         analysis = self.current_node.get_analysis(policy)
-        if analysis:
-            return analysis.get_top_moves(top_k=top_k, top_p=top_p, min_p=min_p)
-        return [], "no_analysis"
+        if not analysis:
+            return [], "no_analysis"
+        policy_data = analysis.human_policy(process=False)
+        return get_top_moves(policy_data, self.board_size, top_k=top_k, top_p=top_p, min_p=min_p)
 
     def sample_move(self, moves: List[Tuple[str, float]]) -> str:
         if not moves:
@@ -419,3 +462,5 @@ class GameLogic:
         if self.move_history:
             return self.move_history[-1][1]
         return None
+
+

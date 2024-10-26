@@ -1,13 +1,13 @@
 from functools import cache
 
 from PySide6.QtCore import Qt, Signal, Slot
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont,QShortcut, QKeySequence
 from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
                                QProgressBar, QPushButton, QSpinBox, QVBoxLayout, QWidget)
 
-from stone.game_logic import GameLogic
-from stone.ui.ui_utils import SettingsTab, create_spin_box
-from stone.utils import setup_logging
+from shape.game_logic import GameLogic
+from shape.ui.ui_utils import SettingsTab, create_spin_box
+from shape.utils import setup_logging
 
 logger = setup_logging()
 
@@ -102,34 +102,16 @@ class ControlPanel(SettingsTab):
 
         # Heatmap settings
         layout.addWidget(QLabel("Heatmap:"), 3, 0)
-        heatmap_layout = QGridLayout()
+        heatmap_layout = QHBoxLayout()
         heatmap_layout.setSpacing(2)  # Reduce spacing between heatmap buttons
-        self.policy_button_group = QButtonGroup(self)
-        self.policy_button_group.setExclusive(True)
 
-        policy_buttons = {
-            "Player": (0, 0, "Ctrl+1"),
-            "Target": (0, 1, "Ctrl+2"),
-            "Opponent": (1, 0, "Ctrl+3"),
-            "AI": (1, 1, "Ctrl+4"),
-            "Hybrid": (2, 0, "Ctrl+5"),
-            "Off": (2, 1, "Ctrl+0"),
-        }
-
-        for text, (row, col, *shortcut) in policy_buttons.items():
-            button = QPushButton(f"{text} ({shortcut[0]})")
+        self.heatmap_buttons = {}
+        for text, shortcut in [("Player", "Ctrl+1"), ("Target", "Ctrl+2"), ("AI", "Ctrl+3")]:
+            button = QPushButton(f"{text} ({shortcut})")
             button.setCheckable(True)
-            if shortcut:
-                button.setShortcut(shortcut[0])
-            self.policy_button_group.addButton(button)
-            button.setChecked(text == "Off")
-            heatmap_layout.addWidget(button, row, col)
-
-        self.heatmap_text_toggle = QPushButton("+text")
-        self.heatmap_text_toggle.setCheckable(True)
-        self.heatmap_text_toggle.setShortcut("Ctrl+T")
-        self.heatmap_text_toggle.setChecked(True)
-        heatmap_layout.addWidget(self.heatmap_text_toggle, 3, 0)
+            button.setShortcut(shortcut)
+            self.heatmap_buttons[text.lower()] = button
+            heatmap_layout.addWidget(button)
 
         layout.addLayout(heatmap_layout, 3, 1, 1, 3)
 
@@ -137,9 +119,11 @@ class ControlPanel(SettingsTab):
         return group
 
     def create_collapsible_info_panel(self):
-        self.info_group = QGroupBox("Info")
+        self.info_group = QGroupBox("Info (Ctrl+0)")
         self.info_group.setCheckable(True)
         self.info_group.setChecked(False)
+        shortcut = QShortcut(QKeySequence("Ctrl+0"), self.main_window)
+        shortcut.activated.connect(lambda: self.info_group.setChecked(not self.info_group.isChecked()))        
         layout = QGridLayout()
 
         self.last_move_label = QLabel("Last move: N/A")
@@ -183,9 +167,9 @@ class ControlPanel(SettingsTab):
     def connect_signals(self):
         self.rank_combo.currentIndexChanged.connect(self.on_settings_changed)
         self.player_color.buttonClicked.connect(self.on_settings_changed)
-        self.policy_button_group.buttonToggled.connect(self.on_settings_changed)
+        for button in self.heatmap_buttons.values():
+            button.toggled.connect(self.on_settings_changed)
         self.auto_play_checkbox.stateChanged.connect(self.on_settings_changed)
-        self.heatmap_text_toggle.clicked.connect(self.on_settings_changed)
         for spinbox in self.rank_spinboxes.values():
             spinbox.valueChanged.connect(self.on_settings_changed)
         self.info_group.toggled.connect(self.on_settings_changed)
@@ -241,18 +225,15 @@ class ControlPanel(SettingsTab):
 
     def get_heatmap_settings(self):
         human_profiles = self.get_human_profiles()
-        policy_option = self.policy_button_group.checkedButton().text().lower()
-        policy_option = policy_option.split(" ")[0]
-        policy = None
-    
-        if policy_option in ["player", "opponent", "target"]:
-            policy = human_profiles[policy_option]
-        elif policy_option == "hybrid":
-            policy = (human_profiles["player"], human_profiles["target"], None)
-        else:
-            policy = None
-    
-        return {"policy": policy, "enabled": policy_option != "off", "text": self.heatmap_text_toggle.isChecked()}
+        policies = [
+            (human_profiles['player'], self.heatmap_buttons['player'].isChecked()),
+            (human_profiles['target'], self.heatmap_buttons['target'].isChecked()),
+            (None, self.heatmap_buttons['ai'].isChecked())
+        ]
+        return {
+            "policy": policies,
+            "enabled": any(policy[1] for policy in policies),
+        }
 
     def update_ui(self, main_window):
         current_rank = self.rank_combo.currentData()
@@ -306,4 +287,6 @@ class ProbabilityWidget(QProgressBar):
     def set_na(self):
         self.setValue(0)
         self.setFormat("N/A")
+
+
 
