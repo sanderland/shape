@@ -1,2 +1,2 @@
-curl https://github.com/lightvector/KataGo/releases/download/v1.15.0/b18c384nbt-humanv0.bin.gz -o models/katago-human.bin.gz
-curl https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b28c512nbt-s7709128960-d4462231357.bin.gz -o models/katago-28b.bin.gz
+curl -L https://github.com/lightvector/KataGo/releases/download/v1.15.0/b18c384nbt-humanv0.bin.gz -o models/katago-human.bin.gz
+curl -L https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b28c512nbt-s7709128960-d4462231357.bin.gz -o models/katago-28b.bin.gz

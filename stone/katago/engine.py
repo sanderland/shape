@@ -74,7 +74,7 @@ class KataGoEngine:
     def _log_stderr(self):
         if self.process.stderr:
             for line in self.process.stderr:
-                logger.debug(f"[KataGo] {line.strip()}")
+                logger.info(f"[KataGo] {line.strip()}")
 
     def _process_responses(self):
         if self.process.stdout:
