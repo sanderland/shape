@@ -25,3 +25,5 @@ The most important settings are:
 The game will automatically halt when a typical mistake is made by you, allowing you to analyze, undo, or just continue.
 
 Keep in mind that the techniques used are more likely to be helpful up to low-dan levels, and may not be helpful at all at high levels.
+
+

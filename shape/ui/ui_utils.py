@@ -66,8 +66,9 @@ def create_double_spin_box(min_value, max_value, default_value, step):
 class SettingsTab(QVBoxLayout):
     settings_updated = Signal()
 
-    def __init__(self):
+    def __init__(self, main_window):
         super().__init__()
+        self.main_window = main_window
         self.setSpacing(10)
         self.setContentsMargins(10, 10, 10, 10)
         self.create_widgets()

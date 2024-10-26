@@ -62,7 +62,7 @@ class SHAPEApp:
         logger.error(message)
 
 def main():
-    stone = SHAPEApp()
+    shape = SHAPEApp()
     sys.exit(shape.run())
 
 

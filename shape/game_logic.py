@@ -13,10 +13,13 @@ logger = setup_logging()
 def get_top_moves(
     policy: np.ndarray | List[float],
     board_size: int,
-    top_k: int = 1000,
-    top_p: float = 1.0,
-    min_p: float = 0.0
+    secondary_data: tuple[np.ndarray, ...] = (),
+    top_k: int = 10000,
+    top_p: float = 1e9,
+    min_p: float = 0.0,
+    exclude_pass: bool = True,
 ) -> Tuple[List[Tuple[str, float]], str]:
+
     size = board_size
     moves = []
     for i, prob in enumerate(policy[:-1]):  # Exclude the last element (pass)
@@ -24,9 +27,9 @@ def get_top_moves(
             row = i // size
             col = i % size
             move = GameNode.rowcol_to_bw(row, col, size)
-            moves.append((move, prob))
-    if policy[-1] > 0:  # Add pass move if its probability is positive
-        moves.append(("pass", policy[-1]))
+            moves.append((move, prob) + tuple(d[i] for d in secondary_data))
+    if policy[-1] > 0 and not exclude_pass:  # Add pass move if its probability is positive
+        moves.append(("pass", policy[-1]) + tuple(d[-1] for d in secondary_data))
     
     moves.sort(key=lambda x: x[1], reverse=True)
     
@@ -34,14 +37,11 @@ def get_top_moves(
     top_moves = []
     highest_prob = moves[0][1] if moves else 0
 
-    for i, (move, prob) in enumerate(moves, 1):
-        if move.lower() == "pass":
-            continue
-
+    for i, (move, prob, *data) in enumerate(moves, 1):
         if prob < min_p * highest_prob:
             return top_moves, "min_p"
 
-        top_moves.append((move, prob))
+        top_moves.append((move, prob, *data))
         total_prob += prob
 
         if i == top_k:
@@ -103,7 +103,7 @@ class Analysis:
 
         highest_prob = policy_data[0][1]
         for i, (move, prob) in enumerate(policy_data, 1):
-            if move.lower() == "pass":
+            if move == "pass":
                 continue
 
             if prob < min_p * highest_prob:
@@ -170,7 +170,7 @@ class GameNode:
 
     @staticmethod
     def bw_to_rowcol(move_str: str, board_size: int) -> Tuple[Optional[int], Optional[int]]:
-        if move_str.lower() == "pass":
+        if move_str == "pass":
             return None, None
 
         col = ord(move_str[0].upper()) - ord("A")
@@ -223,7 +223,7 @@ class GameNode:
         return None
 
     def _parse_move(self, move_str):
-        if move_str.lower() == "pass":
+        if move_str == "pass":
             return None, None
 
         col = ord(move_str[0].upper()) - ord("A")
@@ -408,7 +408,7 @@ class GameLogic:
         sgf_content += f"PB[{player_names['B']}]PW[{player_names['W']}]"
 
         for bw, coords in self.move_history:
-            if coords.lower() == "pass":
+            if coords == "pass":
                 sgf_content += f";{bw}[]"
             else:
                 row, col = GameNode.bw_to_rowcol(coords, self.board_size)
