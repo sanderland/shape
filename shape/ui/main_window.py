@@ -104,7 +104,7 @@ class MainWindow(QMainWindow):
 
         self.board_view.update()
         for tab in [self.control_panel, self.analysis_panel, self.config_panel]:
-            tab.update_ui(self)
+            tab.update_ui()
 
     # actions
     def make_move(self, move):

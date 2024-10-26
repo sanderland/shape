@@ -15,6 +15,7 @@ class BoardView(QWidget):
     PLAYER_POLICY_COLOR = QColor(20, 200, 20)
     TARGET_POLICY_COLOR = QColor(0, 100, 0)
     AI_POLICY_COLOR = QColor(0, 0, 139)
+    OPPONENT_POLICY_COLOR = QColor(139, 0, 0)
 
     def __init__(self, main_window: "MainWindow", parent=None):
         super().__init__(parent)
@@ -214,9 +215,11 @@ class BoardView(QWidget):
         if mean_rank < 1: # Interpolate between Light Green and Dark Green
             ratio = mean_rank / 1
             return self.interpolate_color(self.PLAYER_POLICY_COLOR, self.TARGET_POLICY_COLOR, ratio)
-        else:            # Interpolate between Dark Green and Dark Blue
+        elif mean_rank <= 2:            # Interpolate between Dark Green and Dark Blue
             ratio = min(1,(mean_rank - 1) / 1)
             return self.interpolate_color(self.TARGET_POLICY_COLOR, self.AI_POLICY_COLOR, ratio)
+        else:
+            return self.OPPONENT_POLICY_COLOR
 
 
     def interpolate_color(self, color1, color2, ratio):

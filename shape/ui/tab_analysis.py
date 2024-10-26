@@ -62,8 +62,8 @@ class AnalysisPanel(SettingsTab):
         table.setMinimumHeight(200)  # Set a minimum height for the table
         return table
 
-    def update_ui(self, main_window):
-        game_logic = main_window.game_logic
+    def update_ui(self):
+        game_logic = self.main_window.game_logic
         analysis = game_logic.current_node.get_analysis(None)
         if analysis:
             win_rate = analysis.win_rate() * 100
