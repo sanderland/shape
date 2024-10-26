@@ -1,7 +1,7 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFormLayout, QGroupBox, QHBoxLayout, QLabel, QVBoxLayout
 
-from stone.ui.ui_utils import SettingsTab, create_double_spin_box, create_spin_box
+from shape.ui.ui_utils import SettingsTab, create_double_spin_box, create_spin_box
 
 
 class ConfigPanel(SettingsTab):

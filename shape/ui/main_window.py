@@ -7,13 +7,13 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDia
                                QMainWindow, QMenu, QMenuBar, QPushButton, QSizePolicy, QSpinBox, QStatusBar, QTabWidget,
                                QVBoxLayout, QWidget)
 
-from stone.game_logic import GameLogic
-from stone.ui.board_view import BoardView
-from stone.ui.tab_analysis import AnalysisPanel
-from stone.ui.tab_config import ConfigPanel
-from stone.ui.tab_main_control import ControlPanel
-from stone.ui.ui_utils import MAIN_STYLESHEET
-from stone.utils import setup_logging
+from shape.game_logic import GameLogic
+from shape.ui.board_view import BoardView
+from shape.ui.tab_analysis import AnalysisPanel
+from shape.ui.tab_config import ConfigPanel
+from shape.ui.tab_main_control import ControlPanel
+from shape.ui.ui_utils import MAIN_STYLESHEET
+from shape.utils import setup_logging
 
 logger = setup_logging()
 

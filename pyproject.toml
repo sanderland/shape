@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "stone"
+name = "shape"
 version = "0.1.0"
 description = ""
 authors = ["Sander Land"]
@@ -12,7 +12,7 @@ pyqtgraph = "^0.13.7"
 
 
 [tool.poetry.scripts]
-stone = "stone.main:main"
+stone = "shape.main:main"
 
 [build-system]
 requires = ["poetry-core"]

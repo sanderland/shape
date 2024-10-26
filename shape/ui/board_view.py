@@ -3,8 +3,8 @@ from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QLinearGradient, QPainter, QPen, QRadialGradient
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
-from stone.game_logic import GameLogic
-from stone.utils import setup_logging
+from shape.game_logic import GameLogic
+from shape.utils import setup_logging
 
 logger = setup_logging()
 

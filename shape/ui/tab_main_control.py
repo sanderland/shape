@@ -5,9 +5,9 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
                                QProgressBar, QPushButton, QSpinBox, QVBoxLayout, QWidget)
 
-from stone.game_logic import GameLogic
-from stone.ui.ui_utils import SettingsTab, create_spin_box
-from stone.utils import setup_logging
+from shape.game_logic import GameLogic
+from shape.ui.ui_utils import SettingsTab, create_spin_box
+from shape.utils import setup_logging
 
 logger = setup_logging()
 
@@ -112,8 +112,10 @@ class ControlPanel(SettingsTab):
             "Target": (0, 1, "Ctrl+2"),
             "Opponent": (1, 0, "Ctrl+3"),
             "AI": (1, 1, "Ctrl+4"),
-            "Hybrid": (2, 0, "Ctrl+5"),
-            "Off": (2, 1, "Ctrl+0"),
+            "Player-Target": (2, 0, "Ctrl+5"),
+            "Target-AI": (2, 1, "Ctrl+6"),
+            "Hybrid": (3, 0, "Ctrl+7"),
+            "Off": (3, 1, "Ctrl+8"),
         }
 
         for text, (row, col, *shortcut) in policy_buttons.items():
@@ -129,7 +131,7 @@ class ControlPanel(SettingsTab):
         self.heatmap_text_toggle.setCheckable(True)
         self.heatmap_text_toggle.setShortcut("Ctrl+T")
         self.heatmap_text_toggle.setChecked(True)
-        heatmap_layout.addWidget(self.heatmap_text_toggle, 3, 0)
+        heatmap_layout.addWidget(self.heatmap_text_toggle, 4, 0, 1, 2)  # Span two columns
 
         layout.addLayout(heatmap_layout, 3, 1, 1, 3)
 
@@ -247,6 +249,12 @@ class ControlPanel(SettingsTab):
     
         if policy_option in ["player", "opponent", "target"]:
             policy = human_profiles[policy_option]
+        elif policy_option == "ai":
+            policy = None
+        elif policy_option == "player-target":
+            policy = (human_profiles["player"], human_profiles["target"])
+        elif policy_option == "target-ai":
+            policy = ('missing', human_profiles["target"], None)
         elif policy_option == "hybrid":
             policy = (human_profiles["player"], human_profiles["target"], None)
         else:
@@ -306,4 +314,5 @@ class ProbabilityWidget(QProgressBar):
     def set_na(self):
         self.setValue(0)
         self.setFormat("N/A")
+
 

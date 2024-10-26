@@ -6,9 +6,9 @@ import traceback
 
 from PySide6.QtWidgets import QApplication
 
-from stone.katago.engine import KataGoEngine
-from stone.ui.main_window import MainWindow
-from stone.utils import setup_logging
+from shape.katago.engine import KataGoEngine
+from shape.ui.main_window import MainWindow
+from shape.utils import setup_logging
 
 logger = setup_logging()
 
@@ -63,7 +63,7 @@ class STONEApp:
 
 def main():
     stone = STONEApp()
-    sys.exit(stone.run())
+    sys.exit(shape.run())
 
 
 if __name__ == "__main__":

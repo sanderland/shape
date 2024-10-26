@@ -1,6 +1,6 @@
-# STONE: Strategic Training & Optimization for Novice Enlightenment
+# SHAPE: Strategic Habits And Personalized Evaluation for Go
 
-STONE is an app to play Go with AI feedback, specifically designed to point out typical bad habits for your current skill level.
+SHAPE is an app to play Go with AI feedback, specifically designed to point out typical bad habits for your current skill level.
 
 This is an experimental project, and is unlikely to ever become very polished.
 

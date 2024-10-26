@@ -6,9 +6,51 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from stone.utils import setup_logging
+from shape.utils import setup_logging
 
 logger = setup_logging()
+
+def get_top_moves(
+    policy: np.ndarray | List[float],
+    board_size: int,
+    top_k: int = 1000,
+    top_p: float = 1.0,
+    min_p: float = 0.0
+) -> Tuple[List[Tuple[str, float]], str]:
+    size = board_size
+    moves = []
+    for i, prob in enumerate(policy[:-1]):  # Exclude the last element (pass)
+        if prob > 0:
+            row = i // size
+            col = i % size
+            move = GameNode.rowcol_to_bw(row, col, size)
+            moves.append((move, prob))
+    if policy[-1] > 0:  # Add pass move if its probability is positive
+        moves.append(("pass", policy[-1]))
+    
+    moves.sort(key=lambda x: x[1], reverse=True)
+    
+    total_prob = 0
+    top_moves = []
+    highest_prob = moves[0][1] if moves else 0
+
+    for i, (move, prob) in enumerate(moves, 1):
+        if move.lower() == "pass":
+            continue
+
+        if prob < min_p * highest_prob:
+            return top_moves, "min_p"
+
+        top_moves.append((move, prob))
+        total_prob += prob
+
+        if i == top_k:
+            return top_moves, "top_k"
+        if total_prob >= top_p:
+            return top_moves, "top_p"
+
+    return top_moves, "all"
+
 
 
 class Analysis:
@@ -404,9 +446,10 @@ class GameLogic:
         self, policy: str, top_k: int = 1000, top_p: float = 1.0, min_p: float = 0.0
     ) -> Tuple[List[Tuple[str, float]], str]:
         analysis = self.current_node.get_analysis(policy)
-        if analysis:
-            return analysis.get_top_moves(top_k=top_k, top_p=top_p, min_p=min_p)
-        return [], "no_analysis"
+        if not analysis:
+            return [], "no_analysis"
+        policy_data = analysis.human_policy(process=False)
+        return get_top_moves(policy_data, self.board_size, top_k=top_k, top_p=top_p, min_p=min_p)
 
     def sample_move(self, moves: List[Tuple[str, float]]) -> str:
         if not moves:
@@ -419,3 +462,5 @@ class GameLogic:
         if self.move_history:
             return self.move_history[-1][1]
         return None
+
+

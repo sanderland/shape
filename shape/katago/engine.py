@@ -9,7 +9,7 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
-from stone.utils import setup_logging
+from shape.utils import setup_logging
 
 logger = setup_logging()
 
