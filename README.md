@@ -1,4 +1,4 @@
-# SHAPE: Strategic Habits And Personalized Evaluation for Go
+# SHAPE: Strategic Habits And Personalized Evaluation
 
 SHAPE is an app to play Go with AI feedback, specifically designed to point out typical bad habits for your current skill level.
 
