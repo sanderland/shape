@@ -83,5 +83,5 @@ class SettingsTab(QVBoxLayout):
     def on_settings_changed(self):
         self.settings_updated.emit()
 
-    def update_ui(self, main_window):
+    def update_ui(self):
         pass
