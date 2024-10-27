@@ -24,7 +24,7 @@ def get_top_moves(
         if prob > 0:
             row = i // size
             col = i % size
-            move = GameNode.rowcol_to_bw(row, col, size)
+            move = GameNode.rowcol_to_gtp(row, col, size)
             moves.append((move, prob) + tuple(d[i] for d in secondary_data))
     if policy[-1] > 0 and not exclude_pass:  # Add pass move if its probability is positive
         moves.append(("pass", policy[-1]) + tuple(d[-1] for d in secondary_data))
@@ -80,7 +80,7 @@ class Analysis:
             if prob > 0:
                 row = i // size
                 col = i % size
-                move = GameNode.rowcol_to_bw(row, col, size)
+                move = GameNode.rowcol_to_gtp(row, col, size)
                 moves.append((move, prob))
         if policy[-1] > 0:  # Add pass move if its probability is positive
             moves.append(("pass", policy[-1]))
@@ -168,7 +168,7 @@ class GameNode:
         return len(self.board_state)
 
     @staticmethod
-    def bw_to_rowcol(move_str: str, board_size: int) -> Tuple[Optional[int], Optional[int]]:
+    def gtp_to_rowcol(move_str: str, board_size: int) -> Tuple[Optional[int], Optional[int]]:
         if move_str == "pass":
             return None, None
 
@@ -180,13 +180,13 @@ class GameNode:
         return row, col
 
     @staticmethod
-    def rowcol_to_bw(row: int, col: int, board_size: int) -> str:
+    def rowcol_to_gtp(row: int, col: int, board_size: int) -> str:
         col_str = chr(ord("A") + col + (1 if col >= 8 else 0))
         row_str = str(board_size - row)
         return f"{col_str}{row_str}"
 
     def make_move(self, move: str, player: str | None = None) -> Optional["GameNode"]:
-        row, col = self.bw_to_rowcol(move, self.board_size)
+        row, col = self.gtp_to_rowcol(move, self.board_size)
         if player is None:
             player = self.opponent_color
 
@@ -320,6 +320,20 @@ class GameNode:
         return False
 
 
+    @property
+    def node_history(self):
+        history = []
+        node = self
+        while node:
+            history.append(node)
+            node = node.parent
+        return list(reversed(history))
+
+    @property
+    def move_history(self):
+        return [node.move for node in self.node_history if node.move]
+
+
 class GameLogic:
     def __init__(self):
         self.new_game()
@@ -363,15 +377,6 @@ class GameLogic:
     def board_state(self):
         return self.current_node.board_state
 
-    @property
-    def move_history(self):
-        history = []
-        node = self.current_node
-        while node.parent:
-            history.append(node.move)
-            node = node.parent
-        return list(reversed(history))
-
     def get_score_history(self) -> list[float]:
         score = []
         node = self.current_node
@@ -385,9 +390,10 @@ class GameLogic:
         return score[::-1]
 
     def game_over(self) -> bool:
-        if len(self.move_history) < 2:
+        move_history = self.current_node.move_history
+        if len(move_history) < 2:
             return False
-        return self.move_history[-1][1] == "pass" and self.move_history[-2][1] == "pass"
+        return move_history[-1][1] == "pass" and move_history[-2][1] == "pass"
 
     def export_sgf(self, player_names):
         sgf_content = "(;GM[1]FF[4]CA[UTF-8]AP[HumanGo]"
@@ -396,11 +402,11 @@ class GameLogic:
         # Add player information
         sgf_content += f"PB[{player_names['B']}]PW[{player_names['W']}]"
 
-        for bw, coords in self.move_history:
+        for bw, coords in self.current_node.move_history:
             if coords == "pass":
                 sgf_content += f";{bw}[]"
             else:
-                row, col = GameNode.bw_to_rowcol(coords, self.board_size)
+                row, col = GameNode.gtp_to_rowcol(coords, self.board_size)
                 col_str = chr(ord("a") + col)
                 row_str = chr(ord("a") + self.board_size - 1 - row)
                 sgf_content += f";{bw}[{col_str}{row_str}]"
@@ -423,7 +429,7 @@ class GameLogic:
             for color, coords in moves:
                 row = ord(coords[1]) - ord("a")
                 col = ord(coords[0]) - ord("a")
-                move = GameNode.rowcol_to_bw(row, col, self.board_size)
+                move = GameNode.rowcol_to_gtp(row, col, self.board_size)
                 self.make_move(move, player=color)
             return True
         except Exception as e:

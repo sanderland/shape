@@ -137,6 +137,9 @@ class KataGoEngine:
                 callback({"error": str(e)})
             self.query_queue.task_done()
 
+    def num_outstanding_queries(self):
+        return len(self.response_callbacks)
+
     def close(self):
         self.query_queue.put((None, None))
         if self.process:

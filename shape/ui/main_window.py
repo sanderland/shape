@@ -39,7 +39,6 @@ class MainWindow(QMainWindow):
         self.setFocusPolicy(Qt.StrongFocus)
         self.setup_ui(self.game_logic)
         self.connect_signals()
-        self.setup_shortcuts()
 
         self.update_state_timer = QTimer(self)
         self.update_state_timer.setSingleShot(True)
@@ -65,15 +64,7 @@ class MainWindow(QMainWindow):
 
     def _update_state(self):
         current_node = self.game_logic.current_node
-        human_profiles = self.control_panel.get_human_profiles()
-
-        current_analysis = {
-            k: current_node.get_analysis(k)
-            for k in [None, human_profiles["player"], human_profiles["opponent"], human_profiles["target"]]
-        }
-        for k, v in current_analysis.items():
-            if not v and not current_node.analysis_requested(k):
-                self.request_analysis(current_node, human_profile=k)
+        human_profiles, current_analysis = self.ensure_analysis_requested(current_node)
 
         if not self.game_logic.game_over() and all(current_analysis.values()):
             next_player_human = self.control_panel.get_player_color() == self.game_logic.current_node.opponent_color
@@ -123,13 +114,17 @@ class MainWindow(QMainWindow):
         if self.game_logic.make_move(move):
             self.update_state()
 
-    def on_prev_move(self):
-        if self.game_logic.undo_move():
-            self.update_state()
+    def on_prev_move(self, n=1):
+        for _ in range(n):
+            if not self.game_logic.undo_move():
+                break
+        self.update_state()
 
-    def on_next_move(self):
-        if self.game_logic.redo_move():
-            self.update_state()
+    def on_next_move(self, n=1):
+        for _ in range(n):
+            if not self.game_logic.redo_move():
+                break
+        self.update_state()
 
     def request_ai_move(self):
         self.game_logic.current_node.ai_move_requested = True
@@ -140,6 +135,17 @@ class MainWindow(QMainWindow):
         logger.info(f"New game requested with size: {size}")
         self.game_logic.new_game(size)
         self.update_state()
+
+    def ensure_analysis_requested(self, node):
+        human_profiles = self.control_panel.get_human_profiles()
+        current_analysis = {
+            k: node.get_analysis(k)
+            for k in [None, human_profiles["player"], human_profiles["opponent"], human_profiles["target"]]
+        }
+        for k, v in current_analysis.items():
+            if not v and not node.analysis_requested(k):
+                self.request_analysis(node, human_profile=k)        
+        return human_profiles, current_analysis
 
     # to engine
     def request_analysis(self, node, human_profile, force_visits=None):
@@ -165,7 +171,7 @@ class MainWindow(QMainWindow):
         if self.katago_engine:
             node.mark_analysis_requested(human_profile)
             self.katago_engine.analyze_position(
-                moves=self.game_logic.move_history,
+                moves=node.move_history,
                 callback=lambda resp: self.on_analysis_complete(node, resp, human_profile),
                 rules=self.game_logic.get_settings(),
                 human_profile_settings=human_profile_settings,
@@ -185,6 +191,8 @@ class MainWindow(QMainWindow):
         if human_profile is not None and "humanPolicy" not in analysis:
             logger.error(f"No human policy found in analysis: {analysis}")
         node.store_analysis(analysis, human_profile)
+        num_queries = self.katago_engine.num_outstanding_queries()
+        self.update_status_bar(f"Ready" if num_queries == 0 else f"{human_profile or 'AI'} analysis for {''.join(node.move or 'root')} received, still working on {num_queries} queries")
 
         if node == self.game_logic.current_node:  # update state in main thread
             self.update_state_main_thread.emit()
@@ -222,6 +230,8 @@ class MainWindow(QMainWindow):
         if self.game_logic.import_sgf(sgf_data):
             self.update_state()
             self.update_status_bar("SGF imported successfully.")
+            for node in self.game_logic.current_node.node_history:
+                self.ensure_analysis_requested(node)
         else:
             self.update_status_bar("Failed to import SGF.")
 
@@ -245,9 +255,20 @@ class MainWindow(QMainWindow):
         left_panel.addWidget(self.board_view, 1)
 
         nav_layout = QHBoxLayout()
-        nav_layout.addWidget(QPushButton("Previous", clicked=self.on_prev_move))
-        nav_layout.addWidget(QPushButton("Next", clicked=self.on_next_move))
-        nav_layout.addWidget(QPushButton("Pass", clicked=self.on_pass_move))  # Add Pass button
+        start_button = QPushButton("Start", clicked=lambda: self.on_prev_move(n=1000))
+        start_button.setShortcut(QKeySequence(Qt.SHIFT | Qt.Key_Left))
+        nav_layout.addWidget(start_button)
+        prev_button = QPushButton("Previous", clicked=lambda: self.on_prev_move())
+        prev_button.setShortcut(QKeySequence(Qt.Key_Left))
+        nav_layout.addWidget(prev_button)
+        
+        next_button = QPushButton("Next", clicked=lambda: self.on_next_move())
+        next_button.setShortcut(QKeySequence(Qt.Key_Right))
+        nav_layout.addWidget(next_button)
+
+        pass_button = QPushButton("Pass", clicked=lambda: self.on_pass_move())
+        pass_button.setShortcut(QKeySequence(Qt.Key_P))
+        nav_layout.addWidget(pass_button)
         left_panel.addLayout(nav_layout)
 
         self.create_right_panel_tabs(right_panel)
@@ -326,23 +347,6 @@ class MainWindow(QMainWindow):
             logging_action = QAction(level.capitalize(), self)
             logging_action.triggered.connect(lambda l=level: self.set_logging_level(l))
             logging_menu.addAction(logging_action)
-
-    # shortcuts
-    def setup_shortcuts(self):
-        prev_shortcut = QAction("Previous Move", self)
-        prev_shortcut.setShortcut(QKeySequence(Qt.Key_Left))
-        prev_shortcut.triggered.connect(self.on_prev_move)
-        self.addAction(prev_shortcut)
-
-        next_shortcut = QAction("Next Move", self)
-        next_shortcut.setShortcut(QKeySequence(Qt.Key_Right))
-        next_shortcut.triggered.connect(self.on_next_move)
-        self.addAction(next_shortcut)
-
-        pass_shortcut = QAction("Pass Move", self)
-        pass_shortcut.setShortcut(QKeySequence(Qt.Key_P))
-        pass_shortcut.triggered.connect(self.on_pass_move)
-        self.addAction(pass_shortcut)
 
     def on_pass_move(self):
         if self.game_logic.make_move("pass"):

@@ -98,7 +98,7 @@ class BoardView(QWidget):
 
         last_move = game_logic.current_node.move
         if last_move and last_move[1] != "pass":
-            y, x = game_logic.current_node.bw_to_rowcol(last_move[1], self.board_size)
+            y, x = game_logic.current_node.gtp_to_rowcol(last_move[1], self.board_size)
             yc = self.board_size - y - 1
             center = QPointF(self.margin_left + x * self.cell_size, self.margin_top + yc * self.cell_size)
 
@@ -151,7 +151,7 @@ class BoardView(QWidget):
             painter.drawText(
                 QRectF(bottom_box.x(), bottom_box.y(), self.cell_size, self.cell_size * 0.5),
                 Qt.AlignHCenter | Qt.AlignTop,
-                GameNode.rowcol_to_bw(0, i, 0)[0],
+                GameNode.rowcol_to_gtp(0, i, 0)[0],
             )
             left_box = self.intersection_coords(i + 0.5, -1)
             painter.drawText(
@@ -164,7 +164,7 @@ class BoardView(QWidget):
         col = round((event.x() - self.margin_left) / self.cell_size)
         row = round((event.y() - self.margin_top) / self.cell_size)
         if 0 <= col < self.board_size and 0 <= row < self.board_size:
-            move = self.main_window.game_logic.current_node.rowcol_to_bw(row, col, self.board_size)
+            move = self.main_window.game_logic.current_node.rowcol_to_gtp(row, col, self.board_size)
             self.move_made.emit(move)
 
     def get_star_points(self):
@@ -229,7 +229,7 @@ class BoardView(QWidget):
     def draw_heatmap_points(self, painter, top_moves, show_text=True):
         max_prob = top_moves[0][1]
         for move, prob, rank in top_moves:
-            row, col = self.main_window.game_logic.current_node.bw_to_rowcol(move, self.board_size)
+            row, col = self.main_window.game_logic.current_node.gtp_to_rowcol(move, self.board_size)
             color = self.get_heatmap_color(rank)
             self.draw_heatmap_point(painter, row, col, prob, max_prob, rank, color, show_text)
 
