@@ -10,6 +10,14 @@ python = "^3.10,<3.13"
 PySide6 = "^6.5.0"
 pyqtgraph = "^0.13.7"
 
+[tool.vulture]
+ignore_names = ["paintEvent", "keyPressEvent", "mousePressEvent"]
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
 
 [tool.poetry.scripts]
 shape = "shape.main:main"

@@ -1,13 +1,10 @@
 import copy
 import json
-import logging
 import os
 import queue
 import subprocess
 import threading
-import time
 import traceback
-from concurrent.futures import ThreadPoolExecutor
 
 from shape.utils import setup_logging
 

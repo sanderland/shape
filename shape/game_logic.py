@@ -1,7 +1,4 @@
-import logging
-import math
 import re
-from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -9,6 +6,7 @@ import numpy as np
 from shape.utils import setup_logging
 
 logger = setup_logging()
+
 
 def get_top_moves(
     policy: np.ndarray | List[float],
@@ -30,9 +28,9 @@ def get_top_moves(
             moves.append((move, prob) + tuple(d[i] for d in secondary_data))
     if policy[-1] > 0 and not exclude_pass:  # Add pass move if its probability is positive
         moves.append(("pass", policy[-1]) + tuple(d[-1] for d in secondary_data))
-    
+
     moves.sort(key=lambda x: x[1], reverse=True)
-    
+
     total_prob = 0
     top_moves = []
     highest_prob = moves[0][1] if moves else 0
@@ -52,8 +50,9 @@ def get_top_moves(
     return top_moves, "all"
 
 
-
 class Analysis:
+    REQUESTED = object()
+
     def __init__(self, key: str | None, data: dict):
         self.key = key
         self.data = data
@@ -139,9 +138,9 @@ class GameNode:
         self.move = move
         self.parent = parent
         self.children = []
-        self.analysis = {}
+        self.analyses = {}
         self.ai_move_requested = False  # flag to indicate if ai move was manually requested
-        self.autoplay_halted = False  # flag to indicate if autoplay was automatically halted
+        self.autoplay_halted_reason = None  # flag to indicate if autoplay was automatically halted
 
     @property
     def player(self) -> str | None:
@@ -222,17 +221,6 @@ class GameNode:
             logger.error(f"Move is not valid: {move}")
         return None
 
-    def _parse_move(self, move_str):
-        if move_str == "pass":
-            return None, None
-
-        col = ord(move_str[0].upper()) - ord("A")
-        if col >= 8:  # Adjust for skipping 'I'
-            col -= 1
-        row = int(move_str[1:]) - 1
-
-        return row, col
-
     def _is_valid_move(self, row, col):
         if not (0 <= row < self.board_size and 0 <= col < self.board_size):
             logger.error("Point is out of bounds")
@@ -289,23 +277,24 @@ class GameNode:
         return False
 
     def store_analysis(self, analysis: dict, key: str | None):
-        if analysis is None and key not in self.analysis:
-            self.analysis[key] = None  # requested but not yet received
-            return
+        current_analysis = self.get_analysis(key)
         parsed_analysis = Analysis(key, analysis)
-        if self.analysis.get(key) and self.analysis[key].visit_count() >= parsed_analysis.visit_count():
+        if current_analysis and current_analysis.visit_count() >= parsed_analysis.visit_count():
             return  # ignore if we already have a better analysis
-        self.analysis[key] = parsed_analysis
+        self.analyses[key] = parsed_analysis
+
+    def mark_analysis_requested(self, key: str | None):
+        if key not in self.analyses:
+            self.analyses[key] = Analysis.REQUESTED  # requested but not yet received
 
     def analysis_requested(self, key: str | None):
-        return key in self.analysis  # None means requested but not yet received
+        return key in self.analyses  # None means requested but not yet received
 
-    def get_analysis(self, key: str | None, parent: bool = False) -> Optional[Analysis]:
+    def get_analysis(self, key: str | None, parent: bool = False) -> Analysis | None:
         if parent:
-            if self.parent:
-                return self.parent.get_analysis(key)
-        else:
-            return self.analysis.get(key)
+            return self.parent.get_analysis(key) if self.parent else None
+        analysis = self.analyses.get(key)
+        return None if analysis is Analysis.REQUESTED else analysis
 
     def calculate_mistake_size(self) -> float | None:
         current_analysis = self.get_analysis(None)
@@ -383,17 +372,17 @@ class GameLogic:
             node = node.parent
         return list(reversed(history))
 
-    def get_score_history(self):
-        scores = {"analysis": []}
+    def get_score_history(self) -> list[float]:
+        score = []
         node = self.current_node
         while node:
             analysis = node.get_analysis(None)
             if analysis:
-                scores["analysis"].append(analysis.ai_score())
+                score.append(analysis.ai_score())
             else:
-                scores["analysis"].append(None)
+                score.append(None)
             node = node.parent
-        return {k: v[::-1] for k, v in scores.items()}
+        return score[::-1]
 
     def game_over(self) -> bool:
         if len(self.move_history) < 2:
@@ -457,10 +446,3 @@ class GameLogic:
         moves, probs = zip(*moves)
         probs = np.array(probs) / sum(probs)  # Normalize probabilities
         return np.random.choice(moves, p=probs)
-
-    def get_last_move(self) -> Optional[str]:
-        if self.move_history:
-            return self.move_history[-1][1]
-        return None
-
-
