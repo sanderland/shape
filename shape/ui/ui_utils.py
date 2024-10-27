@@ -1,5 +1,13 @@
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QDoubleSpinBox, QSpinBox, QVBoxLayout
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QDoubleSpinBox,
+    QFormLayout,
+    QGroupBox,
+    QLabel,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
 
 # Stylesheets
 MAIN_STYLESHEET = """
@@ -61,6 +69,30 @@ def create_double_spin_box(min_value, max_value, default_value, step):
     spin_box.setSingleStep(step)
     spin_box.setValue(default_value)
     return spin_box
+
+
+def create_config_section(title: str, widgets: dict[str, QWidget], note: str = None):
+    sample_box = QGroupBox(title)
+    sampling_form_layout = QFormLayout()
+    sampling_form_layout.setLabelAlignment(Qt.AlignRight)
+    sampling_form_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+    if note:
+        sampling_form_layout.addRow(QLabel(note, wordWrap=True))
+    for k, widget in widgets.items():
+        sampling_form_layout.addRow(k, widget)
+    sample_box.setLayout(sampling_form_layout)
+    return sample_box
+
+
+def create_label_info_section(labels: dict[str, str]):
+    holding_widget = QWidget()
+    info_form_layout = QFormLayout()
+    info_form_layout.setLabelAlignment(Qt.AlignLeft)
+    widgets = {k: QLabel() for k, v in labels.items()}
+    for k, v in labels.items():
+        info_form_layout.addRow(v, widgets[k])
+    holding_widget.setLayout(info_form_layout)
+    return holding_widget, widgets
 
 
 class SettingsTab(QVBoxLayout):

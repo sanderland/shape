@@ -1,37 +1,42 @@
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QFormLayout, QGroupBox, QHBoxLayout, QLabel, QVBoxLayout
-
-from shape.ui.ui_utils import SettingsTab, create_double_spin_box, create_spin_box
+from shape.ui.ui_utils import (
+    SettingsTab,
+    create_config_section,
+    create_double_spin_box,
+    create_spin_box,
+)
 
 
 class ConfigPanel(SettingsTab):
-    settings_changed = Signal()
-
     def create_widgets(self):
-        sample_box = QGroupBox("Sampling Settings")
-        form_layout = QFormLayout()
-        form_layout.setLabelAlignment(Qt.AlignRight)
-        form_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-
         self.top_k = create_spin_box(1, 100, 50)
         self.top_p = create_double_spin_box(0.1, 1.0, 1.0, 0.05)
         self.min_p = create_double_spin_box(0.0, 1.0, 0.05, 0.01)
-
-        form_layout.addRow("Top K:", self.top_k)
-        form_layout.addRow("Top P:", self.top_p)
-        form_layout.addRow("Min P:", self.min_p)
-
-        sample_box.setLayout(form_layout)
-        self.addWidget(sample_box)
-
-        ai_strength_box = QGroupBox("Analysis Settings")
-        ai_strength_layout = QHBoxLayout()
-        ai_strength_layout.addWidget(QLabel("Visits:"))
+        self.addWidget(
+            create_config_section(
+                "Policy Sampling Settings",
+                {
+                    "Top K:": self.top_k,
+                    "Top P:": self.top_p,
+                    "Min P:": self.min_p,
+                },
+                note="These settings affect both opponent move selection and the heatmap visualization.",
+            )
+        )
         self.visits = create_spin_box(8, 1024, 24)
-        ai_strength_layout.addWidget(self.visits)
-        ai_strength_box.setLayout(ai_strength_layout)
-        self.addWidget(ai_strength_box)
-
+        self.addWidget(create_config_section("Analysis Settings", {"Visits:": self.visits}))
+        self.mistake_size_spinbox = create_spin_box(0, 100, 1)
+        self.target_rank_spinbox = create_spin_box(0, 100, 20)
+        self.max_probability_spinbox = create_spin_box(0, 5, 1)
+        self.addWidget(
+            create_config_section(
+                "Mistake Feedback Settings. Halt if:",
+                {
+                    "Mistake size > (points)": self.mistake_size_spinbox,
+                    "Either Target rank probability < (%)": self.target_rank_spinbox,
+                    "Or Max policy probability < (%)": self.max_probability_spinbox,
+                },
+            )
+        )
         self.addStretch(1)
 
     def connect_signals(self):
@@ -47,3 +52,17 @@ class ConfigPanel(SettingsTab):
             "top_p": self.top_p.value(),
             "min_p": self.min_p.value(),
         }
+
+    def should_halt_on_mistake(self, move_stats) -> str | None:
+        if move_stats:
+            max_prob = max(move_stats[f"{k}_prob"] for k in ["player", "target", "ai"])
+            mistake_size = move_stats["mistake_size"]
+            target_rank_prob = move_stats["move_like_target"]
+
+            if mistake_size > self.mistake_size_spinbox.value():
+                mistake_size_msg = f"Mistake size ({mistake_size:.2f}) > {self.mistake_size_spinbox.value()} points"
+                if max_prob < self.max_probability_spinbox.value() / 100:
+                    return f"Max policy probability ({max_prob:.1%}) < {self.max_probability_spinbox.value()}% and {mistake_size_msg}"
+                if target_rank_prob < self.target_rank_spinbox.value() / 100:
+                    return f"Target rank probability ({target_rank_prob:.1%}) < {self.target_rank_spinbox.value()}% and {mistake_size_msg}"
+        return None

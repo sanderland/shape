@@ -1,13 +1,10 @@
 import copy
 import json
-import logging
 import os
 import queue
 import subprocess
 import threading
-import time
 import traceback
-from concurrent.futures import ThreadPoolExecutor
 
 from shape.utils import setup_logging
 
@@ -139,6 +136,9 @@ class KataGoEngine:
                 logger.error(f"Error sending query: {e}")
                 callback({"error": str(e)})
             self.query_queue.task_done()
+
+    def num_outstanding_queries(self):
+        return len(self.response_callbacks)
 
     def close(self):
         self.query_queue.put((None, None))
