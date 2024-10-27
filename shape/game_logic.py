@@ -434,7 +434,6 @@ class GameLogic:
             return True
         except Exception as e:
             logger.error(f"Failed to import SGF: {e}")
-            breakpoint()
             return False
 
     def get_top_moves(
