@@ -1,7 +1,8 @@
 import copy
 
 import numpy as np
-from pysgf import SGF, SGFNode, Move
+from pysgf import SGF, Move, SGFNode
+
 from shape.utils import setup_logging
 
 logger = setup_logging()
@@ -25,7 +26,14 @@ class PolicyData:
         col, row = move.coords
         return self.grid[row][col], self.grid[row][col] / self.max_prob
 
-    def sample(self,  top_k: int = 10000, top_p: float = 1e9, min_p: float = 0.0, exclude_pass: bool = True,  secondary_data: np.ndarray | None = None) -> tuple[list[tuple[Move, float, float]], str]:
+    def sample(
+        self,
+        top_k: int = 10000,
+        top_p: float = 1e9,
+        min_p: float = 0.0,
+        exclude_pass: bool = True,
+        secondary_data: np.ndarray | None = None,
+    ) -> tuple[list[tuple[Move, float, float]], str]:
         secondary_data_data = secondary_data if secondary_data is not None else self.grid
         moves = []
         for row, (policy_row, secondary_data_row) in enumerate(zip(self.grid, secondary_data_data)):
@@ -54,7 +62,6 @@ class PolicyData:
         return top_moves, "all"
 
 
-
 class Analysis:
     REQUESTED = object()
 
@@ -62,7 +69,7 @@ class Analysis:
         self.key = key
         self.data = data
         self.ai_policy = PolicyData(data.pop("policy"))
-        if 'humanPolicy' in data:
+        if "humanPolicy" in data:
             self.human_policy = PolicyData(data.pop("humanPolicy"))
         else:
             assert key is None, f"Expected human policy for key {key}"
@@ -80,13 +87,13 @@ class Analysis:
 
     def visit_count(self) -> int:
         return self.root_info.get("visits", 0)
-    
+
     def ai_moves(self) -> list:
         return self.data.get("moveInfos", [])
 
 
 class GameNode(SGFNode):
-    def __init__(self, parent: "GameNode | None"=None, properties=None, move=None):
+    def __init__(self, parent: "GameNode | None" = None, properties=None, move=None):
         super().__init__(parent, properties, move)
         if parent:
             assert move is not None
@@ -96,7 +103,7 @@ class GameNode(SGFNode):
             self.board_state: list[list[str | None]] = [[None for _ in range(bx)] for _ in range(by)]
         self.analyses = {}
         self.ai_move_requested = False  # flag to indicate if ai move was manually requested
-        self.autoplay_halted_reason: str|None = None  # flag to indicate if autoplay was automatically halted
+        self.autoplay_halted_reason: str | None = None  # flag to indicate if autoplay was automatically halted
 
     @property
     def square_board_size(self) -> int:
@@ -106,10 +113,9 @@ class GameNode(SGFNode):
 
     def game_ended(self) -> bool:
         return self.is_pass and self.parent.is_pass
-    
+
     def delete_child(self, child: "GameNode"):
         self.children = [c for c in self.children if c is not child]
-
 
     def _board_state_after_move(self, board_state: list[list[str | None]], move: Move) -> list[list[str | None]]:
         new_board_state = copy.deepcopy(board_state)
@@ -123,10 +129,12 @@ class GameNode(SGFNode):
         else:
             group = self._get_group(new_board_state, col, row)
             if not self._group_has_liberties(new_board_state, group):
-                self._remove_group(new_board_state, group) # allow suicide
+                self._remove_group(new_board_state, group)  # allow suicide
         return new_board_state
 
     def _is_valid_move(self, move: Move):
+        if move.is_pass:
+            return True
         col, row = move.coords
         if not (0 <= row < len(self.board_state) and 0 <= col < len(self.board_state[0])):
             logger.error("Point is out of bounds")
@@ -217,7 +225,6 @@ class GameNode(SGFNode):
         return score_diff if self.player == "W" else -score_diff
 
 
-
 class ShapeSGF(SGF):
     _NODE_CLASS = GameNode
 
@@ -232,7 +239,7 @@ class GameLogic:
     def __getattr__(self, attr):
         if not hasattr(self.current_node, attr):
             raise AttributeError(f"'GameLogic' object has no attribute '{attr}'")
-        return getattr(self.current_node, attr)        
+        return getattr(self.current_node, attr)
 
     def make_move(self, move: Move) -> bool:
         if not self.current_node._is_valid_move(move):
@@ -241,11 +248,11 @@ class GameLogic:
         return True
 
     def undo_move(self, n: int = 1):
-        while (n:=n-1) >= 0 and self.current_node.parent:
+        while (n := n - 1) >= 0 and self.current_node.parent:
             self.current_node = self.current_node.parent
 
     def redo_move(self, n: int = 1):
-        while (n:=n-1) >= 0 and self.current_node.children:
+        while (n := n - 1) >= 0 and self.current_node.children:
             self.current_node = self.current_node.children[0]
 
     def get_score_history(self) -> list[tuple[int, float]]:
@@ -253,8 +260,7 @@ class GameLogic:
         return [(node.depth, ai_analysis.ai_score()) for node in nodes if (ai_analysis := node.get_analysis(None))]
 
     def export_sgf(self, player_names):
-       return self.current_node.root.sgf()
+        return self.current_node.root.sgf()
 
     def import_sgf(self, sgf_data: str):
         self.current_node = ShapeSGF.parse(sgf_data)
-

@@ -271,11 +271,7 @@ class ControlPanel(SettingsTab):
         game_logic = self.main_window.game_logic
         player_color = self.get_player_color()
 
-        node = (
-            game_logic.current_node
-            if game_logic.player == player_color
-            else game_logic.current_node.parent
-        )
+        node = game_logic.current_node if game_logic.player == player_color else game_logic.current_node.parent
 
         if node and (last_player_move := node.move):
             self.last_move_label.setText(f"Last move: {last_player_move.gtp()}")

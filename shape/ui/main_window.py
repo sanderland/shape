@@ -1,4 +1,5 @@
 import logging
+
 import numpy as np
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QKeySequence
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
 from shape.game_logic import GameLogic, Move
 from shape.ui.board_view import BoardView
 from shape.ui.tab_analysis import AnalysisPanel
@@ -64,11 +66,13 @@ class MainWindow(QMainWindow):
         current_node = self.game_logic.current_node
         human_profiles, current_analysis = self.ensure_analysis_requested(current_node)
         next_player_human = self.control_panel.get_player_color() == self.game_logic.next_player
-        # halt auto-play if 
+        # halt auto-play if
         if not self.game_logic.game_ended() and all(current_analysis.values()) and not next_player_human:
-            if not current_node.autoplay_halted_reason and (should_halt_reason := self.config_panel.should_halt_on_mistake(
-                self.control_panel.get_move_stats(current_node)
-            )):
+            if not current_node.autoplay_halted_reason and (
+                should_halt_reason := self.config_panel.should_halt_on_mistake(
+                    self.control_panel.get_move_stats(current_node)
+                )
+            ):
                 current_node.autoplay_halted_reason = should_halt_reason
                 logger.info(f"Halting auto-play due to {should_halt_reason}.")
             else:
@@ -80,23 +84,25 @@ class MainWindow(QMainWindow):
 
     def maybe_make_ai_move(self, current_node, human_profiles, current_analysis, next_player_human):
         if not current_node.children and (self.control_panel.is_auto_play_enabled() or current_node.ai_move_requested):
-            policy_moves, reason = current_analysis[human_profiles["opponent"]].human_policy.sample(**self.config_panel.get_sampling_settings())
-            best_ai_move = current_analysis[None].ai_moves()[0]['move']
+            policy_moves, reason = current_analysis[human_profiles["opponent"]].human_policy.sample(
+                **self.config_panel.get_sampling_settings()
+            )
+            best_ai_move = current_analysis[None].ai_moves()[0]["move"]
             if policy_moves:
                 if best_ai_move == "pass":
                     logger.info(f"Passing because it is the best AI move")
                     self.make_move(None)
                 else:
                     moves, probs, _ = zip(*policy_moves)
-                    move = np.random.choice(moves, p=np.array(probs)/sum(probs))
+                    move = np.random.choice(moves, p=np.array(probs) / sum(probs))
                     logger.info(f"Making sampled move: {move} from {len(policy_moves)} cuttoff due to {reason}")
                     self.make_move(move.coords)
             else:
                 logger.info("No valid moves available, passing")
                 self.make_move(None)
-                
+
     # actions
-    def make_move(self, coords: tuple[int, int]|None):
+    def make_move(self, coords: tuple[int, int] | None):
         if self.game_logic.make_move(Move(coords=coords, player=self.game_logic.next_player)):
             self.update_state()
 
@@ -126,7 +132,7 @@ class MainWindow(QMainWindow):
         }
         for k, v in current_analysis.items():
             if not v and not node.analysis_requested(k):
-                self.request_analysis(node, human_profile=k)        
+                self.request_analysis(node, human_profile=k)
         return human_profiles, current_analysis
 
     # to engine
@@ -170,7 +176,11 @@ class MainWindow(QMainWindow):
             logger.error(f"No human policy found in analysis: {analysis}")
         node.store_analysis(analysis, human_profile)
         num_queries = self.katago_engine.num_outstanding_queries()
-        self.update_status_bar(f"Ready" if num_queries == 0 else f"{human_profile or 'AI'} analysis for {node.move.gtp() if node.move else 'root'} received, still working on {num_queries} queries")
+        self.update_status_bar(
+            f"Ready"
+            if num_queries == 0
+            else f"{human_profile or 'AI'} analysis for {node.move.gtp() if node.move else 'root'} received, still working on {num_queries} queries"
+        )
 
         if node == self.game_logic.current_node:  # update state in main thread
             self.update_state_main_thread.emit()
@@ -239,7 +249,7 @@ class MainWindow(QMainWindow):
         prev_button = QPushButton("Previous", clicked=lambda: self.on_prev_move())
         prev_button.setShortcut(QKeySequence(Qt.Key_Left))
         nav_layout.addWidget(prev_button)
-        
+
         next_button = QPushButton("Next", clicked=lambda: self.on_next_move())
         next_button.setShortcut(QKeySequence(Qt.Key_Right))
         nav_layout.addWidget(next_button)
