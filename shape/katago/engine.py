@@ -1,3 +1,4 @@
+from collections.abc import Callable
 import copy
 import json
 import os
@@ -5,13 +6,23 @@ import queue
 import subprocess
 import threading
 import traceback
-
+from shape.game_logic import GameNode
 from shape.utils import setup_logging
 
 logger = setup_logging()
 
 
 class KataGoEngine:
+    RULESETS_ABBR = {
+        "jp": "japanese",
+        "cn": "chinese",
+        "ko": "korean",
+        "aga": "aga",
+        "tt": "tromp-taylor",
+        "nz": "new zealand",
+        "stone_scoring": "stone_scoring",
+    }
+
     def __init__(self, katago_path):
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         config_path = os.path.join(base_dir, "models", "analysis.cfg")
@@ -106,14 +117,19 @@ class KataGoEngine:
         response["moveInfos"] = moves[:5] + [f"{len(moves)-5} more..."] if len(moves) > 5 else moves
         logger.debug(f"Received response: {json.dumps(response, indent=2)}")
 
-    def analyze_position(self, moves, callback, rules, human_profile_settings, max_visits=100):
+    def analyze_position(self, node: GameNode, callback: Callable, human_profile_settings: dict, max_visits: int = 100):
+        nodes = node.nodes_from_root
+        moves = [m for node in nodes for m in node.moves]
         self.query_counter += 1
-        query_id = f"{len(moves)}_{''.join(moves[-1]) if moves else 'root'}_{human_profile_settings.get('humanSLProfile','ai')}_{max_visits}v_{self.query_counter}"
+        query_id = f"{len(nodes)}_{(moves or ['root'])[-1]}_{human_profile_settings.get('humanSLProfile','ai')}_{max_visits}v_{self.query_counter}"
         query = {
             "id": query_id,
-            "moves": moves,
-            **rules,
+            "rules": self.RULESETS_ABBR.get(node.ruleset.lower(), node.ruleset.lower()),
+            "boardXSize": node.board_size[0],
+            "boardYSize": node.board_size[1],
+             "moves": [[m.player, m.gtp()] for m in moves],
             "includePolicy": True,
+            "initialStones": [[m.player, m.gtp()] for node in nodes for m in node.placements],            
             "includeOwnership": False,
             "maxVisits": max_visits,
             "overrideSettings": human_profile_settings,

@@ -67,11 +67,11 @@ class AnalysisPanel(SettingsTab):
         if analysis:
             win_rate = analysis.win_rate() * 100
             self.info_widgets["win_rate"].setText(f"{win_rate:.1f}%")
-
             score = analysis.ai_score()
             self.info_widgets["score"].setText(f"{'B' if score >= 0 else 'W'}+{abs(score):.1f}")
+            self.info_widgets["total_visits"].setText(f"{analysis.visit_count()}")
 
-            top_moves = analysis.top_moves()
+            top_moves = analysis.ai_moves()
             self.top_moves_table.setRowCount(len(top_moves))
             for row, move in enumerate(top_moves):
                 self.top_moves_table.setItem(row, 0, QTableWidgetItem(move["move"]))
@@ -79,13 +79,11 @@ class AnalysisPanel(SettingsTab):
                 self.top_moves_table.setItem(row, 2, QTableWidgetItem(f"{move['scoreLead']:.1f}"))
                 self.top_moves_table.setItem(row, 3, QTableWidgetItem(f"{move['visits']}"))
 
-            self.update_graph(game_logic.get_score_history())
-
-            self.info_widgets["total_visits"].setText(f"{analysis.visit_count()}")
         else:
             self.clear()
+        self.update_graph(game_logic.get_score_history() or [(0, 0)])
 
-        mistake_size = game_logic.current_node.calculate_mistake_size()
+        mistake_size = game_logic.current_node.mistake_size()
         if mistake_size is not None:
             self.info_widgets["mistake_size"].setText(f"{mistake_size:.2f}")
         else:
@@ -95,21 +93,9 @@ class AnalysisPanel(SettingsTab):
         for widget in self.info_widgets.values():
             widget.setText("N/A")
         self.top_moves_table.clearContents()
-        self.update_graph([])
 
-    def update_graph(self, score: list[float]):
-        moves = []
-        filtered_values = []
-        for move, value in enumerate(score):
-            if value is not None:
-                moves.append(move)
-                filtered_values.append(value)
-
-        if filtered_values:
-            self.graph_widget.plot(moves, filtered_values, pen=pg.mkPen(color="b", width=2), clear=True)
-            self.graph_widget.setYRange(min(filtered_values) - 0.1, max(filtered_values) + 0.1)
-            self.graph_widget.setXRange(0, len(moves) - 1)
-        else:
-            self.graph_widget.clear()
-            self.graph_widget.setYRange(-1, 1)
-            self.graph_widget.setXRange(0, 1)
+    def update_graph(self, scores: list[tuple[int, float]]):
+        moves, filtered_values = zip(*scores)
+        self.graph_widget.plot(moves, filtered_values, pen=pg.mkPen(color="b", width=2), clear=True)
+        self.graph_widget.setYRange(min(filtered_values) - 0.1, max(filtered_values) + 0.1)
+        self.graph_widget.setXRange(0, max(1, len(moves) - 1))

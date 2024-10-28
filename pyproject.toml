@@ -9,6 +9,8 @@ readme = "README.md"
 python = "^3.10,<3.13"
 PySide6 = "^6.5.0"
 pyqtgraph = "^0.13.7"
+pysgf = "^0.9.0"
+numpy = "^2.1.2"
 
 [tool.vulture]
 ignore_names = ["paintEvent", "keyPressEvent", "mousePressEvent"]

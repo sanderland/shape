@@ -1,53 +1,58 @@
-import re
-from typing import Any, Dict, List, Optional, Tuple
+import copy
 
 import numpy as np
-
+from pysgf import SGF, SGFNode, Move
 from shape.utils import setup_logging
 
 logger = setup_logging()
 
 
-def get_top_moves(
-    policy: np.ndarray | List[float],
-    board_size: int,
-    secondary_data: tuple[np.ndarray, ...] = (),
-    top_k: int = 10000,
-    top_p: float = 1e9,
-    min_p: float = 0.0,
-    exclude_pass: bool = True,
-) -> Tuple[List[Tuple[str, float]], str]:
+class PolicyData:
+    @staticmethod
+    def grid_from_data(policy_data: list[float] | np.ndarray):
+        size = int(len(policy_data) ** 0.5)
+        return np.reshape(policy_data[:-1], (size, size))[::-1]
 
-    size = board_size
-    moves = []
-    for i, prob in enumerate(policy[:-1]):  # Exclude the last element (pass)
-        if prob > 0:
-            row = i // size
-            col = i % size
-            move = GameNode.rowcol_to_gtp(row, col, size)
-            moves.append((move, prob) + tuple(d[i] for d in secondary_data))
-    if policy[-1] > 0 and not exclude_pass:  # Add pass move if its probability is positive
-        moves.append(("pass", policy[-1]) + tuple(d[-1] for d in secondary_data))
+    def __init__(self, policy_data: list[float] | np.ndarray):
+        self.data = np.array(policy_data)
+        self.grid = self.grid_from_data(self.data)
+        self.pass_prob = self.data[-1]
+        self.max_prob = np.max(self.data)
 
-    moves.sort(key=lambda x: x[1], reverse=True)
+    def at(self, move: Move) -> tuple[float, float]:
+        if move.is_pass:
+            return self.pass_prob, self.pass_prob / self.max_prob
+        col, row = move.coords
+        return self.grid[row][col], self.grid[row][col] / self.max_prob
 
-    total_prob = 0
-    top_moves = []
-    highest_prob = moves[0][1] if moves else 0
+    def sample(self,  top_k: int = 10000, top_p: float = 1e9, min_p: float = 0.0, exclude_pass: bool = True,  secondary_data: np.ndarray | None = None) -> tuple[list[tuple[Move, float, float]], str]:
+        secondary_data_data = secondary_data if secondary_data is not None else self.grid
+        moves = []
+        for row, (policy_row, secondary_data_row) in enumerate(zip(self.grid, secondary_data_data)):
+            for col, (prob, d) in enumerate(zip(policy_row, secondary_data_row)):
+                if prob > 0:
+                    move = Move(coords=(col, row))
+                    moves.append((move, prob, d))
+        if self.pass_prob > 0 and not exclude_pass:  # Add pass move if its probability is positive
+            moves.append(("pass", self.pass_prob, None))
+        moves.sort(key=lambda x: x[1], reverse=True)
+        highest_prob = moves[0][1]
+        top_moves = []
+        total_prob = 0
+        for i, (move, prob, *data) in enumerate(moves, 1):
+            if prob < min_p * highest_prob:
+                return top_moves, "min_p"
 
-    for i, (move, prob, *data) in enumerate(moves, 1):
-        if prob < min_p * highest_prob:
-            return top_moves, "min_p"
+            top_moves.append((move, prob, *data))
+            total_prob += prob
 
-        top_moves.append((move, prob, *data))
-        total_prob += prob
+            if i == top_k:
+                return top_moves, "top_k"
+            if total_prob >= top_p:
+                return top_moves, "top_p"
 
-        if i == top_k:
-            return top_moves, "top_k"
-        if total_prob >= top_p:
-            return top_moves, "top_p"
+        return top_moves, "all"
 
-    return top_moves, "all"
 
 
 class Analysis:
@@ -56,223 +61,121 @@ class Analysis:
     def __init__(self, key: str | None, data: dict):
         self.key = key
         self.data = data
+        self.ai_policy = PolicyData(data.pop("policy"))
+        if 'humanPolicy' in data:
+            self.human_policy = PolicyData(data.pop("humanPolicy"))
+        else:
+            assert key is None, f"Expected human policy for key {key}"
+            self.human_policy = self.ai_policy
+
+    @property
+    def root_info(self) -> dict:
+        return self.data.get("rootInfo", {})
 
     def ai_score(self) -> float | None:
-        return self.data.get("rootInfo", {}).get("scoreLead")
+        return self.root_info.get("scoreLead")
 
     def win_rate(self) -> float | None:
-        return self.data.get("rootInfo", {}).get("winrate")
-
-    def top_moves(self) -> List[Dict[str, Any]]:
-        return self.data.get("moveInfos", [])
+        return self.root_info.get("winrate")
 
     def visit_count(self) -> int:
-        return self.data.get("rootInfo", {}).get("visits", 0)
+        return self.root_info.get("visits", 0)
+    
+    def ai_moves(self) -> list:
+        return self.data.get("moveInfos", [])
 
-    def _process_policy(self, policy: List[float], process: bool = True) -> List[Tuple[str, float]] | List[float]:
-        if not policy:
-            return []
-        if not process:
-            return policy
-        moves = []
-        size = int(len(policy) ** 0.5)
-        for i, prob in enumerate(policy[:-1]):  # Exclude the last element (pass)
-            if prob > 0:
-                row = i // size
-                col = i % size
-                move = GameNode.rowcol_to_gtp(row, col, size)
-                moves.append((move, prob))
-        if policy[-1] > 0:  # Add pass move if its probability is positive
-            moves.append(("pass", policy[-1]))
-        return sorted(moves, key=lambda x: x[1], reverse=True)
 
-    def human_policy(self, process: bool = True) -> List[Tuple[str, float]] | List[float]:
-        if self.key is None:
-            return self.ai_policy(process)
+class GameNode(SGFNode):
+    def __init__(self, parent: "GameNode | None"=None, properties=None, move=None):
+        super().__init__(parent, properties, move)
+        if parent:
+            assert move is not None
+            self.board_state = self._board_state_after_move(parent.board_state, move)
         else:
-            return self._process_policy(self.data["humanPolicy"], process)
-
-    def ai_policy(self, process: bool = True) -> List[Tuple[str, float]] | List[float]:
-        return self._process_policy(self.data["policy"], process)
-
-    def get_top_moves(self, top_k, top_p, min_p) -> Tuple[List[Tuple[str, float]], str]:
-        policy_data = self.human_policy()
-        total_prob = 0
-        top_moves = []
-
-        highest_prob = policy_data[0][1]
-        for i, (move, prob) in enumerate(policy_data, 1):
-            if move == "pass":
-                continue
-
-            if prob < min_p * highest_prob:
-                return top_moves, "min_p"
-
-            top_moves.append((move, prob))
-            total_prob += prob
-
-            if i == top_k:
-                return top_moves, "top_k"
-            if i == top_k or total_prob >= top_p:
-                return top_moves, "top_p"
-
-        return top_moves, "all"
-
-    def move_probability(self, move: str) -> Tuple[float, float]:
-        policy = self.human_policy()
-        highest_prob = policy[0][1]
-        for m, prob in policy:
-            if m == move:
-                return prob, prob / highest_prob
-        return 0.0, 0.0
-
-
-class GameNode:
-    def __init__(
-        self,
-        board_state: List[List[str | None]],
-        move: Optional[Tuple[str, str]] = None,
-        parent: Optional["GameNode"] = None,
-    ):
-        self.board_state = board_state
-        self.move = move
-        self.parent = parent
-        self.children = []
+            bx, by = self.board_size
+            self.board_state: list[list[str | None]] = [[None for _ in range(bx)] for _ in range(by)]
         self.analyses = {}
         self.ai_move_requested = False  # flag to indicate if ai move was manually requested
-        self.autoplay_halted_reason = None  # flag to indicate if autoplay was automatically halted
+        self.autoplay_halted_reason: str|None = None  # flag to indicate if autoplay was automatically halted
 
     @property
-    def player(self) -> str | None:
-        if self.move is None:
-            return "W"  # root node, only used for determining opponent-opponent color
-        return self.move[0]
+    def square_board_size(self) -> int:
+        bx, by = self.board_size
+        assert bx == by, "Non-square board size not supported"
+        return bx
 
-    @property
-    def coords(self) -> str | None:
-        if self.move is None:
-            return None
-        return self.move[1]
+    def game_ended(self) -> bool:
+        return self.is_pass and self.parent.is_pass
+    
+    def delete_child(self, child: "GameNode"):
+        self.children = [c for c in self.children if c is not child]
 
-    @property
-    def opponent_color(self) -> str:
-        if self.move is None:
-            return "B"  # root node
-        return "W" if self.move[0] == "B" else "B"
 
-    def __repr__(self):
-        return f"<GameNode move={''.join(self.move) if self.move else 'root'}>"
-
-    @property
-    def board_size(self):
-        return len(self.board_state)
-
-    @staticmethod
-    def gtp_to_rowcol(move_str: str, board_size: int) -> Tuple[Optional[int], Optional[int]]:
-        if move_str == "pass":
-            return None, None
-
-        col = ord(move_str[0].upper()) - ord("A")
-        if col >= 8:  # Adjust for skipping 'I'
-            col -= 1
-        row = int(move_str[1:]) - 1
-
-        return row, col
-
-    @staticmethod
-    def rowcol_to_gtp(row: int, col: int, board_size: int) -> str:
-        col_str = chr(ord("A") + col + (1 if col >= 8 else 0))
-        row_str = str(board_size - row)
-        return f"{col_str}{row_str}"
-
-    def make_move(self, move: str, player: str | None = None) -> Optional["GameNode"]:
-        row, col = self.gtp_to_rowcol(move, self.board_size)
-        if player is None:
-            player = self.opponent_color
-
-        if row is None or col is None:
-            logger.info(f"Pass move made")
-            new_node = GameNode(self.board_state, (player, "pass"), self)
-            self.children.append(new_node)
-            return new_node
-
-        if self._is_valid_move(row, col):
-            for child in self.children:
-                if child.move == (player, move):
-                    logger.debug(f"Move already exists: {move}")
-                    return child
-
-            new_board_state = [row[:] for row in self.board_state]
-            new_board_state[row][col] = player
-            captured = self._remove_captured_stones(new_board_state, row, col, self.player)
-
-            if not captured:
-                group = self._get_group(new_board_state, row, col)
-                if not self._group_has_liberties(new_board_state, group):
-                    logger.error(f"Suicide move detected: {move}")
-                    return None
-
-            player = self.opponent_color
-            new_node = GameNode(new_board_state, (player, move), self)
-            self.children.append(new_node)
-            logger.info(f"Move made: {move}, Captured: {len(captured)}")
-            return new_node
+    def _board_state_after_move(self, board_state: list[list[str | None]], move: Move) -> list[list[str | None]]:
+        new_board_state = copy.deepcopy(board_state)
+        if move.is_pass:
+            return new_board_state
+        col, row = move.coords
+        new_board_state[row][col] = move.player
+        captured = self._remove_captured_stones(new_board_state, col, row, move.opponent)
+        if captured:
+            self._remove_group(new_board_state, captured)
         else:
-            logger.error(f"Move is not valid: {move}")
-        return None
+            group = self._get_group(new_board_state, col, row)
+            if not self._group_has_liberties(new_board_state, group):
+                self._remove_group(new_board_state, group) # allow suicide
+        return new_board_state
 
-    def _is_valid_move(self, row, col):
-        if not (0 <= row < self.board_size and 0 <= col < self.board_size):
+    def _is_valid_move(self, move: Move):
+        col, row = move.coords
+        if not (0 <= row < len(self.board_state) and 0 <= col < len(self.board_state[0])):
             logger.error("Point is out of bounds")
             return False
         if self.board_state[row][col] is not None:
             logger.error("Point is already occupied")
             return False
-        # TODO: Implement ko rule
         return True
 
-    def _remove_captured_stones(self, board_state, row, col, opponent):
+    def _remove_captured_stones(self, board_state, col, row, opponent):
         captured = []
-        for drow, dcol in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-            nrow, ncol = row + drow, col + dcol
-            if 0 <= nrow < self.board_size and 0 <= ncol < self.board_size:
-                if board_state[nrow][ncol] == opponent:
-                    group = self._get_group(board_state, nrow, ncol)
-                    if not self._group_has_liberties(board_state, group):
-                        self._remove_group(board_state, group)
-                        captured.extend(group)
+        for dcol, drow in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            ncol, nrow = col + dcol, row + drow
+            if 0 <= nrow < len(board_state) and 0 <= ncol < len(board_state[0]) and board_state[nrow][ncol] == opponent:
+                group = self._get_group(board_state, ncol, nrow)
+                if not self._group_has_liberties(board_state, group):
+                    self._remove_group(board_state, group)
+                    captured.extend(group)
         return captured
 
-    def _get_group(self, board_state, row, col):
+    def _get_group(self, board_state, col, row):
         color = board_state[row][col]
         group = set()
-        stack = [(row, col)]
+        stack = [(col, row)]
         while stack:
-            crow, ccol = stack.pop()
-            if (crow, ccol) not in group:
-                group.add((crow, ccol))
-                for drow, dcol in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-                    nrow, ncol = crow + drow, ccol + dcol
-                    if 0 <= nrow < self.board_size and 0 <= ncol < self.board_size:
+            ccol, crow = stack.pop()
+            if (ccol, crow) not in group:
+                group.add((ccol, crow))
+                for dcol, drow in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+                    ncol, nrow = ccol + dcol, crow + drow
+                    if 0 <= nrow < len(board_state) and 0 <= ncol < len(board_state[0]):
                         if board_state[nrow][ncol] == color:
-                            stack.append((nrow, ncol))
+                            stack.append((ncol, nrow))
         return group
 
-    def _has_liberties(self, board_state, row, col):
-        for drow, dcol in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-            nrow, ncol = row + drow, col + dcol
-            if 0 <= nrow < self.board_size and 0 <= ncol < self.board_size:
-                if board_state[nrow][ncol] is None:
-                    return True
+    def _has_liberties(self, board_state, col, row):
+        for dcol, drow in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            ncol, nrow = col + dcol, row + drow
+            if 0 <= nrow < len(board_state) and 0 <= ncol < len(board_state[0]) and board_state[nrow][ncol] is None:
+                return True
         return False
 
     def _remove_group(self, board_state, group):
-        for row, col in group:
+        for col, row in group:
             board_state[row][col] = None
 
     def _group_has_liberties(self, board_state, group):
-        for row, col in group:
-            if self._has_liberties(board_state, row, col):
+        for col, row in group:
+            if self._has_liberties(board_state, col, row):
                 return True
         return False
 
@@ -296,7 +199,7 @@ class GameNode:
         analysis = self.analyses.get(key)
         return None if analysis is Analysis.REQUESTED else analysis
 
-    def calculate_mistake_size(self) -> float | None:
+    def mistake_size(self) -> float | None:
         current_analysis = self.get_analysis(None)
         parent_analysis = None
         if self.parent:
@@ -313,141 +216,45 @@ class GameNode:
         score_diff = current_score - parent_score
         return score_diff if self.player == "W" else -score_diff
 
-    def delete_child(self, child_node: "GameNode"):
-        if child_node in self.children:
-            self.children.remove(child_node)
-            return True
-        return False
 
 
-    @property
-    def node_history(self):
-        history = []
-        node = self
-        while node:
-            history.append(node)
-            node = node.parent
-        return list(reversed(history))
-
-    @property
-    def move_history(self):
-        return [node.move for node in self.node_history if node.move]
+class ShapeSGF(SGF):
+    _NODE_CLASS = GameNode
 
 
 class GameLogic:
     def __init__(self):
         self.new_game()
 
-    def new_game(self, board_size=19):
-        initial_board = [[None for _ in range(board_size)] for _ in range(board_size)]
-        self.root = GameNode(initial_board)
-        self.current_node = self.root
-        self.rules = {"rules": "japanese", "komi": 6.5}
+    def new_game(self, board_size=19, **rules):
+        self.current_node = GameNode(properties={"RU": "JP", "KM": 6.5, "SZ": board_size, **rules})
 
-    @property
-    def board_size(self):
-        return self.current_node.board_size
+    def __getattr__(self, attr):
+        if not hasattr(self.current_node, attr):
+            raise AttributeError(f"'GameLogic' object has no attribute '{attr}'")
+        return getattr(self.current_node, attr)        
 
-    def make_move(self, move, player: str | None = None) -> bool:
-        new_node = self.current_node.make_move(move, player)
-        if new_node:
-            self.current_node = new_node
-            return True
-        return False
-
-    def undo_move(self) -> bool:
-        if self.current_node.parent:
-            self.current_node = self.current_node.parent
-            return True
-        return False
-
-    def redo_move(self) -> bool:
-        if self.current_node.children:
-            self.current_node = self.current_node.children[0]
-            return True
-        return False
-
-    def current_player_color(self):
-        return self.current_node.player
-
-    def get_settings(self):
-        return {**self.rules, "boardXSize": self.current_node.board_size, "boardYSize": self.current_node.board_size}
-
-    @property
-    def board_state(self):
-        return self.current_node.board_state
-
-    def get_score_history(self) -> list[float]:
-        score = []
-        node = self.current_node
-        while node:
-            analysis = node.get_analysis(None)
-            if analysis:
-                score.append(analysis.ai_score())
-            else:
-                score.append(None)
-            node = node.parent
-        return score[::-1]
-
-    def game_over(self) -> bool:
-        move_history = self.current_node.move_history
-        if len(move_history) < 2:
+    def make_move(self, move: Move) -> bool:
+        if not self.current_node._is_valid_move(move):
             return False
-        return move_history[-1][1] == "pass" and move_history[-2][1] == "pass"
+        self.current_node = self.current_node.play(move)
+        return True
+
+    def undo_move(self, n: int = 1):
+        while (n:=n-1) >= 0 and self.current_node.parent:
+            self.current_node = self.current_node.parent
+
+    def redo_move(self, n: int = 1):
+        while (n:=n-1) >= 0 and self.current_node.children:
+            self.current_node = self.current_node.children[0]
+
+    def get_score_history(self) -> list[tuple[int, float]]:
+        nodes = self.current_node.nodes_from_root
+        return [(node.depth, ai_analysis.ai_score()) for node in nodes if (ai_analysis := node.get_analysis(None))]
 
     def export_sgf(self, player_names):
-        sgf_content = "(;GM[1]FF[4]CA[UTF-8]AP[HumanGo]"
-        sgf_content += f"SZ[{self.board_size}]"
+       return self.current_node.root.sgf()
 
-        # Add player information
-        sgf_content += f"PB[{player_names['B']}]PW[{player_names['W']}]"
+    def import_sgf(self, sgf_data: str):
+        self.current_node = ShapeSGF.parse(sgf_data)
 
-        for bw, coords in self.current_node.move_history:
-            if coords == "pass":
-                sgf_content += f";{bw}[]"
-            else:
-                row, col = GameNode.gtp_to_rowcol(coords, self.board_size)
-                col_str = chr(ord("a") + col)
-                row_str = chr(ord("a") + self.board_size - 1 - row)
-                sgf_content += f";{bw}[{col_str}{row_str}]"
-
-        sgf_content += ")"
-        return sgf_content
-
-    def import_sgf(self, sgf_data: str) -> bool:
-        try:
-            board_size_pattern = r"SZ\[(\d+)\]"
-            board_size_match = re.search(board_size_pattern, sgf_data)
-            if board_size_match:
-                board_size = int(board_size_match.group(1))
-            else:
-                logger.error("Board size not found in SGF data")
-                return False
-            move_pattern = r";([BW])\[(.*?)\]"
-            moves = re.findall(move_pattern, sgf_data)
-            self.new_game(board_size)
-            for color, coords in moves:
-                row = ord(coords[1]) - ord("a")
-                col = ord(coords[0]) - ord("a")
-                move = GameNode.rowcol_to_gtp(row, col, self.board_size)
-                self.make_move(move, player=color)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to import SGF: {e}")
-            return False
-
-    def get_top_moves(
-        self, policy: str, top_k: int = 1000, top_p: float = 1.0, min_p: float = 0.0
-    ) -> Tuple[List[Tuple[str, float]], str]:
-        analysis = self.current_node.get_analysis(policy)
-        if not analysis:
-            return [], "no_analysis"
-        policy_data = analysis.human_policy(process=False)
-        return get_top_moves(policy_data, self.board_size, top_k=top_k, top_p=top_p, min_p=min_p)
-
-    def sample_move(self, moves: List[Tuple[str, float]]) -> str:
-        if not moves:
-            return "pass"
-        moves, probs = zip(*moves)
-        probs = np.array(probs) / sum(probs)  # Normalize probabilities
-        return np.random.choice(moves, p=probs)

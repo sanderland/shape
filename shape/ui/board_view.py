@@ -11,14 +11,13 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
-from shape.game_logic import GameNode, get_top_moves
+from shape.game_logic import GameNode, Move, PolicyData
 from shape.utils import setup_logging
 
 logger = setup_logging()
 
 
 class BoardView(QWidget):
-    move_made = Signal(str)
     WOOD_COLOR = QColor(220, 179, 92)
     PLAYER_POLICY_COLOR = QColor(20, 200, 20)
     TARGET_POLICY_COLOR = QColor(0, 100, 0)
@@ -39,14 +38,14 @@ class BoardView(QWidget):
         self.margin_top = self.cell_size * 0.5
         self.stone_size = self.cell_size * 0.95
 
-    def intersection_coords(self, row, col) -> QPointF:
+    def intersection_coords(self, col, row) -> QPointF:
         x = self.margin_left + col * self.cell_size
         y = self.margin_top + (self.board_size - row - 1) * self.cell_size
         return QPointF(x, y)
 
     def paintEvent(self, event):
         board_state = self.main_window.game_logic.board_state
-        self.calculate_dimensions(self.main_window.game_logic.board_size)
+        self.calculate_dimensions(self.main_window.game_logic.square_board_size)
 
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
@@ -79,31 +78,27 @@ class BoardView(QWidget):
         grid_rect = QRectF(self.margin_left, self.margin_top, grid_size, grid_size)
         painter.setPen(QPen(QColor(0, 0, 0, 180), 1))
         for i in range(self.board_size):
-            painter.drawLine(self.intersection_coords(i, 0), self.intersection_coords(i, self.board_size - 1))
-            painter.drawLine(self.intersection_coords(0, i), self.intersection_coords(self.board_size - 1, i))
+            painter.drawLine(self.intersection_coords(0, i), self.intersection_coords(self.board_size - 1,i ))
+            painter.drawLine(self.intersection_coords(i, 0), self.intersection_coords(i,self.board_size - 1))
         painter.setPen(QPen(QColor(0, 0, 0), 2))
         painter.drawRect(grid_rect)
 
     def draw_star_points(self, painter):
         painter.setBrush(QBrush(Qt.black))
-        for x, y in self.get_star_points():
-            painter.drawEllipse(self.intersection_coords(y, x), 3, 3)
+        for col, row in self.get_star_points():
+            painter.drawEllipse(self.intersection_coords(col, row), 3, 3)
 
     def draw_stones(self, board_state, painter):
         game_logic = self.main_window.game_logic
-        for y in range(self.board_size):
-            for x in range(self.board_size):
-                if board_state[y][x] is not None:
-                    self.draw_stone(painter, x, y, Qt.black if board_state[y][x] == "B" else Qt.white)
+        for row in range(self.board_size):
+            for col in range(self.board_size):
+                if board_state[row][col] is not None:
+                    self.draw_stone(painter, row, col, Qt.black if board_state[row][col] == "B" else Qt.white)
 
-        last_move = game_logic.current_node.move
-        if last_move and last_move[1] != "pass":
-            y, x = game_logic.current_node.gtp_to_rowcol(last_move[1], self.board_size)
-            yc = self.board_size - y - 1
-            center = QPointF(self.margin_left + x * self.cell_size, self.margin_top + yc * self.cell_size)
-
-            # Inner circle for last move
-            if board_state[y][x] == "B":  # Black stone
+        last_move = game_logic.move
+        if last_move and not last_move.is_pass:  # Inner circle for last move
+            center = self.intersection_coords(*last_move.coords)
+            if last_move.player == "B":  # Black stone
                 painter.setPen(QPen(QColor(240, 240, 240, 180), 2))  # Soft light gray outline
             else:  # White stone
                 painter.setPen(QPen(QColor(50, 50, 50, 180), 2))  # Soft dark gray outline
@@ -111,8 +106,8 @@ class BoardView(QWidget):
             painter.setBrush(Qt.NoBrush)
             painter.drawEllipse(center, self.stone_size / 4, self.stone_size / 4)
 
-    def draw_stone(self, painter, x, y, color):
-        center = self.intersection_coords(y, x)
+    def draw_stone(self, painter, row, col, color):
+        center = self.intersection_coords(col, row)
 
         gradient = QRadialGradient(center.x() - self.stone_size / 4, center.y() - self.stone_size / 4, self.stone_size)
         if color == Qt.black:
@@ -147,13 +142,13 @@ class BoardView(QWidget):
         painter.setFont(font)
         painter.setPen(QColor(0, 0, 0))
         for i in range(self.board_size):
-            bottom_box = self.intersection_coords(-0.5, i - 0.5)
+            bottom_box = self.intersection_coords(i - 0.5, -0.5)
             painter.drawText(
                 QRectF(bottom_box.x(), bottom_box.y(), self.cell_size, self.cell_size * 0.5),
                 Qt.AlignHCenter | Qt.AlignTop,
-                GameNode.rowcol_to_gtp(0, i, 0)[0],
+                Move.GTP_COORD[i],
             )
-            left_box = self.intersection_coords(i + 0.5, -1)
+            left_box = self.intersection_coords(-1, i + 0.5)
             painter.drawText(
                 QRectF(left_box.x(), left_box.y(), self.cell_size * 0.5, self.cell_size),
                 Qt.AlignVCenter | Qt.AlignRight,
@@ -164,8 +159,7 @@ class BoardView(QWidget):
         col = round((event.x() - self.margin_left) / self.cell_size)
         row = round((event.y() - self.margin_top) / self.cell_size)
         if 0 <= col < self.board_size and 0 <= row < self.board_size:
-            move = self.main_window.game_logic.current_node.rowcol_to_gtp(row, col, self.board_size)
-            self.move_made.emit(move)
+            self.main_window.make_move((col, self.board_size - row - 1))
 
     def get_star_points(self):
         if self.board_size == 19:
@@ -180,17 +174,17 @@ class BoardView(QWidget):
     def sizeHint(self):
         return QSize(600, 600)
 
-    def get_weighted_policy_data(self, policy):
+    def get_weighted_policy_data(self, human_profiles: list[str]) -> tuple[np.ndarray | None, np.ndarray]:
         game_logic = self.main_window.game_logic
 
-        heatmap_mean_prob = heatmap_mean_rank = None
+        heatmap_mean_prob = None
         heatmap_mean_rank = np.array([])  # make type hints happy
         num_enabled = 0
 
-        for i, (policy, enabled) in enumerate(policy):
-            if not (analysis := game_logic.current_node.get_analysis(policy)):
+        for i, (profile, enabled) in enumerate(human_profiles):
+            if not (analysis := game_logic.current_node.get_analysis(profile)):
                 continue
-            policy = np.array(analysis.human_policy(process=False))
+            policy = np.array(analysis.human_policy.data)
             if enabled:
                 num_enabled += 1
                 if heatmap_mean_prob is None:
@@ -201,15 +195,15 @@ class BoardView(QWidget):
         if heatmap_mean_prob is not None:
             heatmap_mean_rank /= heatmap_mean_prob.clip(min=1e-10)
             heatmap_mean_prob /= num_enabled
-
+        
         return heatmap_mean_prob, heatmap_mean_rank
 
     def draw_heatmap(self, painter, policy, show_text, sampling_settings):
         heatmap_mean_prob, heatmap_mean_rank = self.get_weighted_policy_data(policy)
 
         if (
-            self.main_window.game_logic.current_node.move
-            and self.main_window.game_logic.current_node.move[1] == "pass"
+            self.main_window.game_logic.move
+            and self.main_window.game_logic.move.is_pass
             and self.main_window.game_logic.current_node.parent.parent is None
         ):
             # Create gradients for probability (left to right) and rank (top to bottom)
@@ -221,17 +215,14 @@ class BoardView(QWidget):
             sampling_settings = dict(min_p=0)
 
         if heatmap_mean_prob is not None:
-            top_moves, _ = get_top_moves(
-                heatmap_mean_prob, self.board_size, secondary_data=(heatmap_mean_rank,), **sampling_settings
-            )
+            top_moves, _ = PolicyData(heatmap_mean_prob).sample(secondary_data=PolicyData.grid_from_data(heatmap_mean_rank), **sampling_settings)
             self.draw_heatmap_points(painter, top_moves)
 
-    def draw_heatmap_points(self, painter, top_moves, show_text=True):
+    def draw_heatmap_points(self, painter, top_moves):
         max_prob = top_moves[0][1]
         for move, prob, rank in top_moves:
-            row, col = self.main_window.game_logic.current_node.gtp_to_rowcol(move, self.board_size)
             color = self.get_heatmap_color(rank)
-            self.draw_heatmap_point(painter, row, col, prob, max_prob, rank, color, show_text)
+            self.draw_heatmap_point(painter, move, prob, max_prob, color)
 
     def get_heatmap_color(self, mean_rank):
         if mean_rank < 1:  # Interpolate between Light Green and Dark Green
@@ -249,11 +240,12 @@ class BoardView(QWidget):
         b = color1.blue() + (color2.blue() - color1.blue()) * ratio
         return QColor(int(r), int(g), int(b))
 
-    def draw_heatmap_point(self, painter, row, col, total_prob, max_prob, mean_rank, color, show_text):
+    def draw_heatmap_point(self, painter, move, total_prob, max_prob, color, show_text=True):
         rel_prob = total_prob / max_prob
         size = 0.25 + 0.725 * rel_prob
-        x = self.margin_left + col * self.cell_size
-        y = self.margin_top + (self.board_size - row - 1) * self.cell_size
+        center = self.intersection_coords(*move.coords)
+        x = center.x() - size / 2
+        y = center.y() - size / 2
 
         if rel_prob < 0.01:
             text = ""
@@ -281,9 +273,9 @@ class BoardView(QWidget):
         current_node = game_logic.current_node
 
         message = ""
-        if game_logic.game_over():
+        if game_logic.game_ended():
             message = "Both players passed."
-        elif current_node.move and current_node.move[1] == "pass":
+        elif current_node.move and current_node.move.is_pass:
             message = "Pass"
 
         if message:
