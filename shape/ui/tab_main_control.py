@@ -230,14 +230,13 @@ class ControlPanel(SettingsTab):
         if not node.move:  # root
             return None
         human_profiles = self.get_human_profiles()
-        move = node.move[1]
-        player_policy = node.get_analysis(human_profiles["player"], parent=True)
-        target_policy = node.get_analysis(human_profiles["target"], parent=True)
-        ai_policy = node.get_analysis(None, parent=True)
-        if player_policy and target_policy and ai_policy:
-            player_prob, player_relative_prob = player_policy.move_probability(move)
-            target_prob, target_relative_prob = target_policy.move_probability(move)
-            ai_prob, ai_relative_prob = ai_policy.move_probability(move)
+        currentlv_analysis = node.get_analysis(human_profiles["player"], parent=True)
+        target_analysis = node.get_analysis(human_profiles["target"], parent=True)
+        ai_analysis = node.get_analysis(None, parent=True)
+        if currentlv_analysis and target_analysis and ai_analysis:
+            player_prob, player_relative_prob = currentlv_analysis.human_policy.at(node.move)
+            target_prob, target_relative_prob = target_analysis.human_policy.at(node.move)
+            ai_prob, ai_relative_prob = ai_analysis.ai_policy.at(node.move)
             return dict(
                 player_prob=player_prob,
                 target_prob=target_prob,
@@ -246,7 +245,7 @@ class ControlPanel(SettingsTab):
                 target_relative_prob=target_relative_prob,
                 ai_relative_prob=ai_relative_prob,
                 move_like_target=target_prob / max(player_prob + target_prob, 1e-10),
-                mistake_size=node.calculate_mistake_size(),
+                mistake_size=node.mistake_size(),
             )
         return None
 
@@ -272,14 +271,10 @@ class ControlPanel(SettingsTab):
         game_logic = self.main_window.game_logic
         player_color = self.get_player_color()
 
-        node = (
-            game_logic.current_node
-            if game_logic.current_player_color() == player_color
-            else game_logic.current_node.parent
-        )
+        node = game_logic.current_node if game_logic.player == player_color else game_logic.current_node.parent
 
-        if node and node.move and (last_player_move := node.move[1]):
-            self.last_move_label.setText(f"Last move: {last_player_move}")
+        if node and (last_player_move := node.move):
+            self.last_move_label.setText(f"Last move: {last_player_move.gtp()}")
         else:
             self.last_move_label.setText("Last move: N/A")
 

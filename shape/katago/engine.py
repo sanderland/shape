@@ -5,13 +5,25 @@ import queue
 import subprocess
 import threading
 import traceback
+from collections.abc import Callable
 
+from shape.game_logic import GameNode
 from shape.utils import setup_logging
 
 logger = setup_logging()
 
 
 class KataGoEngine:
+    RULESETS_ABBR = {
+        "jp": "japanese",
+        "cn": "chinese",
+        "ko": "korean",
+        "aga": "aga",
+        "tt": "tromp-taylor",
+        "nz": "new zealand",
+        "stone_scoring": "stone_scoring",
+    }
+
     def __init__(self, katago_path):
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         config_path = os.path.join(base_dir, "models", "analysis.cfg")
@@ -30,13 +42,11 @@ class KataGoEngine:
             "-human-model",
             human_model_path,
         ]
-
-        self.process = self._start_process(command)
-        if self.process.poll() is not None:
-            self._handle_process_exit()
-
         self.query_queue = queue.Queue()
         self.response_callbacks = {}
+        self.process = self._start_process(command)
+        if self.process.poll() is not None:
+            raise RuntimeError(f"KataGo process exited unexpectedly on startup: {self.process.stderr.read()}")
 
         threads = [
             threading.Thread(target=self._log_stderr, daemon=True),
@@ -63,15 +73,11 @@ class KataGoEngine:
             logger.error(f"Failed to start KataGo process: {e}")
             raise
 
-    def _handle_process_exit(self):
-        error_output = self.process.stderr.read() if self.process.stderr else "No error output available"
-        logger.error(f"KataGo process exited unexpectedly. Error output: {error_output}")
-        raise RuntimeError("KataGo process exited unexpectedly")
-
-    def _log_stderr(self):
-        if self.process.stderr:
-            for line in self.process.stderr:
-                logger.info(f"[KataGo] {line.strip()}")
+    def close(self):
+        self.query_queue.put((None, None))
+        if self.process:
+            self.process.terminate()
+            self.process.wait()
 
     def _process_responses(self):
         if self.process.stdout:
@@ -94,26 +100,19 @@ class KataGoEngine:
                 except json.JSONDecodeError:
                     logger.error(f"Failed to parse KataGo response: {line.strip()}")
 
-    def _log_response(self, response):
-        response = copy.deepcopy(response)
-        for k in ["policy", "humanPolicy"]:
-            if k in response:
-                response[k] = f"[{len(response[k])} floats]"
-        moves = [
-            {k: v for k, v in move.items() if k in ["move", "visits", "winrate"]}
-            for move in response.get("moveInfos", [])
-        ]
-        response["moveInfos"] = moves[:5] + [f"{len(moves)-5} more..."] if len(moves) > 5 else moves
-        logger.debug(f"Received response: {json.dumps(response, indent=2)}")
-
-    def analyze_position(self, moves, callback, rules, human_profile_settings, max_visits=100):
+    def analyze_position(self, node: GameNode, callback: Callable, human_profile_settings: dict, max_visits: int = 100):
+        nodes = node.nodes_from_root
+        moves = [m for node in nodes for m in node.moves]
         self.query_counter += 1
-        query_id = f"{len(moves)}_{''.join(moves[-1]) if moves else 'root'}_{human_profile_settings.get('humanSLProfile','ai')}_{max_visits}v_{self.query_counter}"
+        query_id = f"{len(nodes)}_{(moves or ['root'])[-1]}_{human_profile_settings.get('humanSLProfile','ai')}_{max_visits}v_{self.query_counter}"
         query = {
             "id": query_id,
-            "moves": moves,
-            **rules,
+            "rules": self.RULESETS_ABBR.get(node.ruleset.lower(), node.ruleset.lower()),
+            "boardXSize": node.board_size[0],
+            "boardYSize": node.board_size[1],
+            "moves": [[m.player, m.gtp()] for m in moves],
             "includePolicy": True,
+            "initialStones": [[m.player, m.gtp()] for node in nodes for m in node.placements],
             "includeOwnership": False,
             "maxVisits": max_visits,
             "overrideSettings": human_profile_settings,
@@ -140,8 +139,19 @@ class KataGoEngine:
     def num_outstanding_queries(self):
         return len(self.response_callbacks)
 
-    def close(self):
-        self.query_queue.put((None, None))
-        if self.process:
-            self.process.terminate()
-            self.process.wait()
+    def _log_stderr(self):
+        if self.process.stderr:
+            for line in self.process.stderr:
+                logger.info(f"[KataGo] {line.strip()}")
+
+    def _log_response(self, response):
+        response = copy.deepcopy(response)
+        for k in ["policy", "humanPolicy"]:
+            if k in response:
+                response[k] = f"[{len(response[k])} floats]"
+        moves = [
+            {k: v for k, v in move.items() if k in ["move", "visits", "winrate"]}
+            for move in response.get("moveInfos", [])
+        ]
+        response["moveInfos"] = moves[:5] + [f"{len(moves)-5} more..."] if len(moves) > 5 else moves
+        logger.debug(f"Received response: {json.dumps(response, indent=2)}")
