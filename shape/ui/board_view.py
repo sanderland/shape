@@ -33,7 +33,7 @@ class BoardView(QWidget):
 
     def sizeHint(self):
         return QSize(600, 600)
-    
+
     def __init__(self, main_window: "MainWindow", parent=None):
         super().__init__(parent)
         self.main_window = main_window
@@ -132,7 +132,7 @@ class BoardView(QWidget):
         center = self.intersection_coords(col, row)
 
         gradient = QRadialGradient(center.x() - self.stone_size / 4, center.y() - self.stone_size / 4, self.stone_size)
-        if color == 'B':
+        if color == "B":
             gradient.setColorAt(0, QColor(80, 80, 80))
             gradient.setColorAt(0.5, Qt.black)
             gradient.setColorAt(1, QColor(10, 10, 10))
@@ -279,3 +279,19 @@ class BoardView(QWidget):
             painter.setPen(QColor(0, 0, 0))
             text_rect = QRectF(0, 0, self.width(), self.margin_top)
             painter.drawText(text_rect, Qt.AlignCenter, message)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Left:
+            if event.modifiers() & Qt.ShiftModifier:
+                self.main_window.on_prev_move(5)
+            else:
+                self.main_window.on_prev_move()
+        elif event.key() == Qt.Key_Right:
+            if event.modifiers() & Qt.ShiftModifier:
+                self.main_window.on_next_move(5)
+            else:
+                self.main_window.on_next_move()
+        elif event.key() == Qt.Key_Space:
+            self.main_window.on_pass_move()
+        else:
+            super().keyPressEvent(event)

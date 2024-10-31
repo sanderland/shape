@@ -67,8 +67,8 @@ class MainWindow(QMainWindow):
         human_profiles, current_analysis = self.ensure_analysis_requested(current_node)
         next_player_human = self.control_panel.get_player_color() == self.game_logic.next_player
         # halt auto-play if
-        if not self.game_logic.game_ended() and all(current_analysis.values()) and not next_player_human:
-            if not current_node.autoplay_halted_reason and (
+        if not self.game_logic.game_ended() and all(current_analysis.values()):
+            if not next_player_human and (
                 should_halt_reason := self.config_panel.should_halt_on_mistake(
                     self.control_panel.get_move_stats(current_node)
                 )
@@ -83,7 +83,10 @@ class MainWindow(QMainWindow):
         self.board_view.update()
 
     def maybe_make_ai_move(self, current_node, human_profiles, current_analysis, next_player_human):
-        if not current_node.children and (self.control_panel.is_auto_play_enabled() or current_node.ai_move_requested):
+        if (
+            not current_node.children and self.control_panel.is_auto_play_enabled() and not next_player_human
+        ) or current_node.ai_move_requested:
+            current_node.ai_move_requested = False
             policy_moves, reason = current_analysis[human_profiles["opponent"]].human_policy.sample(
                 **self.config_panel.get_sampling_settings()
             )
@@ -124,6 +127,45 @@ class MainWindow(QMainWindow):
         self.game_logic.new_game(size)
         self.update_state()
 
+    def copy_sgf_to_clipboard(self):
+        self.save_as_sgf(to_clipboard=True)
+
+    def save_as_sgf(self, to_clipboard: bool = False):
+        def get_player_name(color):
+            if self.control_panel.get_player_color() == color:
+                return f"Human"
+            else:
+                profile = self.control_panel.get_human_profiles()["opponent"]
+                return f"AI ({profile})" if profile else f"KataGo"
+
+        player_names = {bw: get_player_name(bw) for bw in "BW"}
+        sgf_data = self.game_logic.export_sgf(player_names)
+
+        if to_clipboard:
+            clipboard = QApplication.clipboard()
+            clipboard.setText(sgf_data)
+            self.update_status_bar(f"SGF of length {len(sgf_data)} with {player_names} copied to clipboard.")
+        else:
+            file_path, _ = QFileDialog.getSaveFileName(self, "Save SGF File", "", "SGF Files (*.sgf)")
+            if file_path:
+                if not file_path.lower().endswith(".sgf"):
+                    file_path += ".sgf"
+                with open(file_path, "w") as f:
+                    f.write(sgf_data)
+                self.update_status_bar(f"SGF saved to {file_path}.")
+
+    def paste_sgf_from_clipboard(self):
+        clipboard = QApplication.clipboard()
+        sgf_data = clipboard.text()
+        if self.game_logic.import_sgf(sgf_data):
+            self.update_state()
+            self.update_status_bar("SGF imported successfully.")
+            for node in self.game_logic.current_node.node_history:
+                self.ensure_analysis_requested(node)
+        else:
+            self.update_status_bar("Failed to import SGF.")
+
+    # analysis
     def ensure_analysis_requested(self, node):
         human_profiles = self.control_panel.get_human_profiles()
         current_analysis = {
@@ -135,7 +177,6 @@ class MainWindow(QMainWindow):
                 self.request_analysis(node, human_profile=k)
         return human_profiles, current_analysis
 
-    # to engine
     def request_analysis(self, node, human_profile, force_visits=None):
         if node.analysis_requested(human_profile) and not force_visits:
             return
@@ -185,44 +226,6 @@ class MainWindow(QMainWindow):
         if node == self.game_logic.current_node:  # update state in main thread
             self.update_state_main_thread.emit()
 
-    def copy_sgf_to_clipboard(self):
-        self.save_as_sgf(to_clipboard=True)
-
-    def save_as_sgf(self, to_clipboard: bool = False):
-        def get_player_name(color):
-            if self.control_panel.get_player_color() == color:
-                return f"Human"
-            else:
-                profile = self.control_panel.get_human_profiles()["opponent"]
-                return f"AI ({profile})" if profile else f"KataGo"
-
-        player_names = {bw: get_player_name(bw) for bw in "BW"}
-        sgf_data = self.game_logic.export_sgf(player_names)
-
-        if to_clipboard:
-            clipboard = QApplication.clipboard()
-            clipboard.setText(sgf_data)
-            self.update_status_bar(f"SGF of length {len(sgf_data)} with {player_names} copied to clipboard.")
-        else:
-            file_path, _ = QFileDialog.getSaveFileName(self, "Save SGF File", "", "SGF Files (*.sgf)")
-            if file_path:
-                if not file_path.lower().endswith(".sgf"):
-                    file_path += ".sgf"
-                with open(file_path, "w") as f:
-                    f.write(sgf_data)
-                self.update_status_bar(f"SGF saved to {file_path}.")
-
-    def paste_sgf_from_clipboard(self):
-        clipboard = QApplication.clipboard()
-        sgf_data = clipboard.text()
-        if self.game_logic.import_sgf(sgf_data):
-            self.update_state()
-            self.update_status_bar("SGF imported successfully.")
-            for node in self.game_logic.current_node.node_history:
-                self.ensure_analysis_requested(node)
-        else:
-            self.update_status_bar("Failed to import SGF.")
-
     # UI setup
 
     def setup_ui(self):
@@ -233,60 +236,45 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
         main_layout = QHBoxLayout(central_widget)
-
-        left_panel = QVBoxLayout()
-        right_panel = QVBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
         self.board_view = BoardView(self)
         self.board_view.setFocusPolicy(Qt.StrongFocus)
         self.board_view.installEventFilter(self)
-        left_panel.addWidget(self.board_view, 1)
+        main_layout.addWidget(self.board_view, 5)
 
-        nav_layout = QHBoxLayout()
-        start_button = QPushButton("Start", clicked=lambda: self.on_prev_move(n=1000))
-        start_button.setShortcut(QKeySequence(Qt.SHIFT | Qt.Key_Left))
-        nav_layout.addWidget(start_button)
-        prev_button = QPushButton("Previous", clicked=lambda: self.on_prev_move())
-        prev_button.setShortcut(QKeySequence(Qt.Key_Left))
-        nav_layout.addWidget(prev_button)
+        # Create a container for the right panel with proper margins
+        right_panel_container = QWidget()
+        right_panel_layout = QVBoxLayout(right_panel_container)
+        right_panel_layout.setContentsMargins(0, 12, 0, 0)
+        right_panel_layout.addWidget(self.create_right_panel_tabs())
 
-        next_button = QPushButton("Next", clicked=lambda: self.on_next_move())
-        next_button.setShortcut(QKeySequence(Qt.Key_Right))
-        nav_layout.addWidget(next_button)
-
-        pass_button = QPushButton("Pass", clicked=lambda: self.on_pass_move())
-        pass_button.setShortcut(QKeySequence(Qt.Key_P))
-        nav_layout.addWidget(pass_button)
-        left_panel.addLayout(nav_layout)
-
-        self.create_right_panel_tabs(right_panel)
-
-        main_layout.addLayout(left_panel, 2)
-        main_layout.addLayout(right_panel, 1)
+        main_layout.addWidget(right_panel_container, 3)
 
         self.setMinimumSize(1200, 800)
 
-    def create_right_panel_tabs(self, right_panel):
-        self.tab_widget = QTabWidget()
-        right_panel.addWidget(self.tab_widget)
+    def create_right_panel_tabs(self):
+        tab_widget = QTabWidget()
 
         # Play tab
         play_tab = QWidget()
         self.control_panel = ControlPanel(self)
         play_tab.setLayout(self.control_panel)
-        self.tab_widget.addTab(play_tab, "Play")
+        tab_widget.addTab(play_tab, "Play")
 
         # AI Analysis tab
         ai_analysis_tab = QWidget()
         self.analysis_panel = AnalysisPanel(self)
         ai_analysis_tab.setLayout(self.analysis_panel)
-        self.tab_widget.addTab(ai_analysis_tab, "AI Analysis")
+        tab_widget.addTab(ai_analysis_tab, "AI Analysis")
 
         # Settings tab
         settings_tab = QWidget()
         self.config_panel = ConfigPanel(self)
         settings_tab.setLayout(self.config_panel)
-        self.tab_widget.addTab(settings_tab, "Settings")
+        tab_widget.addTab(settings_tab, "Settings")
+        return tab_widget
 
     def create_status_bar(self):
         status_bar = QStatusBar(self)

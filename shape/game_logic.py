@@ -35,13 +35,13 @@ class PolicyData:
         secondary_data: np.ndarray | None = None,
     ) -> tuple[list[tuple[Move, float, float]], str]:
         secondary_data_data = secondary_data if secondary_data is not None else self.grid
-        moves = []
-        for row, (policy_row, secondary_data_row) in enumerate(zip(self.grid, secondary_data_data)):
-            for col, (prob, d) in enumerate(zip(policy_row, secondary_data_row)):
-                if prob > 0:
-                    move = Move(coords=(col, row))
-                    moves.append((move, prob, d))
-        if self.pass_prob > 0 and not exclude_pass:  # Add pass move if its probability is positive
+        moves = [
+            (Move(coords=(col, row)), prob, d)
+            for row, (policy_row, secondary_data_row) in enumerate(zip(self.grid, secondary_data_data))
+            for col, (prob, d) in enumerate(zip(policy_row, secondary_data_row))
+            if prob > 0
+        ]
+        if self.pass_prob > 0 and not exclude_pass:
             moves.append(("pass", self.pass_prob, None))
         moves.sort(key=lambda x: x[1], reverse=True)
         highest_prob = moves[0][1]
@@ -50,7 +50,6 @@ class PolicyData:
         for i, (move, prob, *data) in enumerate(moves, 1):
             if prob < min_p * highest_prob:
                 return top_moves, "min_p"
-
             top_moves.append((move, prob, *data))
             total_prob += prob
 
@@ -165,9 +164,12 @@ class GameNode(SGFNode):
                 group.add((ccol, crow))
                 for dcol, drow in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
                     ncol, nrow = ccol + dcol, crow + drow
-                    if 0 <= nrow < len(board_state) and 0 <= ncol < len(board_state[0]):
-                        if board_state[nrow][ncol] == color:
-                            stack.append((ncol, nrow))
+                    if (
+                        0 <= nrow < len(board_state)
+                        and 0 <= ncol < len(board_state[0])
+                        and board_state[nrow][ncol] == color
+                    ):
+                        stack.append((ncol, nrow))
         return group
 
     def _has_liberties(self, board_state, col, row):
@@ -182,10 +184,7 @@ class GameNode(SGFNode):
             board_state[row][col] = None
 
     def _group_has_liberties(self, board_state, group):
-        for col, row in group:
-            if self._has_liberties(board_state, col, row):
-                return True
-        return False
+        return any(self._has_liberties(board_state, col, row) for col, row in group)
 
     def store_analysis(self, analysis: dict, key: str | None):
         current_analysis = self.get_analysis(key)
