@@ -24,11 +24,17 @@ class KataGoEngine:
         "stone_scoring": "stone_scoring",
     }
 
-    def __init__(self, katago_path):
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        config_path = os.path.join(base_dir, "models", "analysis.cfg")
-        model_path = os.path.join(base_dir, "models", "katago-28b.bin.gz")
-        human_model_path = os.path.join(base_dir, "models", "katago-human.bin.gz")
+    def __init__(self, katago_path, model_folder=None):
+        if model_folder == None:
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        else:
+            print(model_folder)
+            base_dir = os.path.abspath(model_folder)
+            print(base_dir)
+
+        config_path = os.path.join(base_dir, "analysis.cfg")
+        model_path = os.path.join(base_dir, "katago-28b.bin.gz")
+        human_model_path = os.path.join(base_dir, "katago-human.bin.gz")
         if not os.path.exists(config_path) or not os.path.exists(model_path) or not os.path.exists(human_model_path):
             raise RuntimeError("Models not found. Run install.sh to download the models.")
 
