@@ -54,15 +54,7 @@ def main():
                         help='Path to the model folder (optional)', default=None)
     args = parser.parse_args()
 
-    katago_path = None
-    if args.katago:
-        katago_path = args.katago
-
-    model_folder = None
-    if args.model_folder:
-        model_folder = args.model_folder
-
-    shape = SHAPEApp(katago_path, model_folder)
+    shape = SHAPEApp(args.katago, args.model_folder)
     sys.exit(shape.run())
 
 
