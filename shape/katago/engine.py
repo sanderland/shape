@@ -28,9 +28,7 @@ class KataGoEngine:
         if model_folder == None:
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         else:
-            print(model_folder)
             base_dir = os.path.abspath(model_folder)
-            print(base_dir)
 
         config_path = os.path.join(base_dir, "analysis.cfg")
         model_path = os.path.join(base_dir, "katago-28b.bin.gz")
