@@ -51,6 +51,9 @@ class KataGoEngine:
             paths = dialog.get_paths()
             if not paths:
                 raise RuntimeError("Could not retrieve component paths even after download dialog.")
+        
+        # Store version info for the main window title
+        self.katago_version, self.katago_backend = dialog.get_katago_version_info()
 
         command = [
             os.path.abspath(paths["katago_path"]),

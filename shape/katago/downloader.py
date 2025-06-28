@@ -30,6 +30,43 @@ from shape.utils import setup_logging
 logger = setup_logging()
 
 KATRAIN_DIR = Path.home() / ".katrain"
+
+
+def get_katago_version_info(katago_path: Path) -> tuple[str, str]:
+    """Get KataGo version and backend info. Returns (version, backend)."""
+    try:
+        result = subprocess.run(
+            [str(katago_path), "version"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0:
+            lines = result.stdout.strip().split('\n')
+            version = "Unknown"
+            backend = "Unknown"
+            
+            for line in lines:
+                if line.startswith("KataGo v"):
+                    version = line.split()[1]  # Extract version like "v1.15.3"
+                elif "backend" in line.lower():
+                    # Extract backend like "OpenCL", "CUDA", etc.
+                    if "OpenCL" in line:
+                        backend = "OpenCL"
+                    elif "CUDA" in line:
+                        backend = "CUDA"
+                    elif "CPU" in line:
+                        backend = "CPU"
+                    else:
+                        backend = line.split()[-1]  # Last word of the line
+            
+            return version, backend
+        else:
+            logger.warning(f"KataGo version command failed: {result.stderr}")
+            return "Unknown", "Unknown"
+    except Exception as e:
+        logger.warning(f"Failed to get KataGo version: {e}")
+        return "Unknown", "Unknown"
 KATAGO_DIR = KATRAIN_DIR / "katago"
 KATAGO_EXE_NAME = "katago.exe" if platform.system() == "Windows" else "katago"
 KATAGO_PATH = KATAGO_DIR / KATAGO_EXE_NAME
@@ -109,10 +146,24 @@ class ComponentWidget(QWidget):
             self.download_button.setVisible(False)
             self.progress_bar.setVisible(True)
         elif self.component.found:
-            if hasattr(self.component, '_path_katago'):
-                self.status_label.setText(f"<font color='green'>Found in PATH: {self.component._path_katago}</font>")
+            if self.component.name == "KataGo Engine":
+                # Show version info for KataGo
+                if hasattr(self.component, '_path_katago'):
+                    katago_path = self.component._path_katago
+                    location_text = f"Found in PATH: {katago_path}"
+                else:
+                    katago_path = self.component.destination_path
+                    location_text = f"Found at {katago_path}"
+                
+                version, backend = get_katago_version_info(katago_path)
+                self.status_label.setText(f"<font color='green'>{location_text}<br/>Version: {version} ({backend})</font>")
             else:
-                self.status_label.setText(f"<font color='green'>Found at {self.component.destination_path}</font>")
+                # For models, show file info
+                if hasattr(self.component, '_path_katago'):
+                    self.status_label.setText(f"<font color='green'>Found in PATH: {self.component._path_katago}</font>")
+                else:
+                    file_size = self.component.destination_path.stat().st_size // (1024 * 1024) if self.component.destination_path.exists() else 0
+                    self.status_label.setText(f"<font color='green'>Found at {self.component.destination_path}<br/>Size: {file_size} MB</font>")
             self.download_button.setVisible(False)
             self.progress_bar.setVisible(False)
         elif self.component.error:
@@ -245,12 +296,12 @@ class ComponentsDownloaderDialog(QDialog):
 
     def setup_ui(self):
         layout = QVBoxLayout()
-        title = QLabel("Checking for required components...")
+        self.title_label = QLabel("Checking for required components...")
         font = QFont()
         font.setPointSize(16)
         font.setBold(True)
-        title.setFont(font)
-        layout.addWidget(title)
+        self.title_label.setFont(font)
+        layout.addWidget(self.title_label)
 
         for component in self.components:
             widget = component.get_widget(self.download_one, self)
@@ -294,12 +345,26 @@ class ComponentsDownloaderDialog(QDialog):
         component.downloading = False
         component.error = error if error else None
         component.check_if_found()
-        self.component_widgets[component.name].update_status()
+        # Force progress bar to be hidden and reset
+        widget = self.component_widgets[component.name]
+        widget.progress_bar.setVisible(False)
+        widget.progress_bar.setRange(0, 100)
+        widget.progress_bar.setValue(0)
+        widget.update_status()
         self.check_all_found()
 
     def check_all_found(self):
         all_found = all(c.check_if_found() for c in self.components)
         downloading = any(c.downloading for c in self.components)
+        
+        # Update title based on status
+        if downloading:
+            self.title_label.setText("Downloading components...")
+        elif all_found:
+            self.title_label.setText("All components ready!")
+        else:
+            missing_count = sum(1 for c in self.components if not c.found)
+            self.title_label.setText(f"Missing {missing_count} component{'s' if missing_count != 1 else ''}")
 
         self.download_all_button.setEnabled(not all_found and not downloading)
         self.close_button.setEnabled(all_found and not downloading)
@@ -322,4 +387,17 @@ class ComponentsDownloaderDialog(QDialog):
             "katago_path": katago_path,
             "model_path": self.components[1].destination_path,
             "human_model_path": self.components[2].destination_path
-        } 
+        }
+    
+    def get_katago_version_info(self) -> tuple[str, str]:
+        """Get KataGo version and backend info for the main window title."""
+        katago_component = self.components[0]  # KataGo Engine is first
+        if not katago_component.found:
+            return "Unknown", "Unknown"
+            
+        if hasattr(katago_component, '_path_katago'):
+            katago_path = katago_component._path_katago
+        else:
+            katago_path = KATAGO_PATH
+            
+        return get_katago_version_info(katago_path) 
