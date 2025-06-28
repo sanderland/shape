@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):
         # Update window title with version info
         try:
             from importlib.metadata import version
+
             shape_version = version("goshape")
         except ImportError:
             shape_version = "dev"  # Fallback for development
