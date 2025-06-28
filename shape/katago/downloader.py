@@ -30,14 +30,9 @@ KATRAIN_DIR = Path.home() / ".katrain"
 def get_katago_version_info(katago_path: Path) -> tuple[str, str]:
     """Get KataGo version and backend info. Returns (version, backend)."""
     try:
-        result = subprocess.run(
-            [str(katago_path), "version"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
+        result = subprocess.run([str(katago_path), "version"], capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
-            lines = result.stdout.strip().split('\n')
+            lines = result.stdout.strip().split("\n")
             version = "Unknown"
             backend = "Unknown"
 
@@ -62,6 +57,8 @@ def get_katago_version_info(katago_path: Path) -> tuple[str, str]:
     except Exception as e:
         logger.warning(f"Failed to get KataGo version: {e}")
         return "Unknown", "Unknown"
+
+
 KATAGO_DIR = KATRAIN_DIR / "katago"
 KATAGO_EXE_NAME = "katago.exe" if platform.system() == "Windows" else "katago"
 KATAGO_PATH = KATAGO_DIR / KATAGO_EXE_NAME
@@ -99,7 +96,7 @@ class DownloadableComponent:
 
         self.found = self.destination_path.exists()
         if self.found:
-            self.error = None # reset error on found
+            self.error = None  # reset error on found
         return self.found
 
     def get_widget(self, download_callback, parent_dialog) -> "ComponentWidget":
@@ -131,7 +128,7 @@ class ComponentWidget(QWidget):
     def _on_download_click(self):
         self.download_button.setEnabled(False)
         self.progress_bar.setVisible(True)
-        self.progress_bar.setRange(0,0)
+        self.progress_bar.setRange(0, 0)
         self.download_callback(self.component)
 
     def update_status(self):
@@ -143,7 +140,7 @@ class ComponentWidget(QWidget):
         elif self.component.found:
             if self.component.name == "KataGo Engine":
                 # Show version info for KataGo
-                if hasattr(self.component, '_path_katago'):
+                if hasattr(self.component, "_path_katago"):
                     katago_path = self.component._path_katago
                     location_text = f"Found in PATH: {katago_path}"
                 else:
@@ -151,14 +148,24 @@ class ComponentWidget(QWidget):
                     location_text = f"Found at {katago_path}"
 
                 version, backend = get_katago_version_info(katago_path)
-                self.status_label.setText(f"<font color='green'>{location_text}<br/>Version: {version} ({backend})</font>")
+                self.status_label.setText(
+                    f"<font color='green'>{location_text}<br/>Version: {version} ({backend})</font>"
+                )
             else:
                 # For models, show file info
-                if hasattr(self.component, '_path_katago'):
-                    self.status_label.setText(f"<font color='green'>Found in PATH: {self.component._path_katago}</font>")
+                if hasattr(self.component, "_path_katago"):
+                    self.status_label.setText(
+                        f"<font color='green'>Found in PATH: {self.component._path_katago}</font>"
+                    )
                 else:
-                    file_size = self.component.destination_path.stat().st_size // (1024 * 1024) if self.component.destination_path.exists() else 0
-                    self.status_label.setText(f"<font color='green'>Found at {self.component.destination_path}<br/>Size: {file_size} MB</font>")
+                    file_size = (
+                        self.component.destination_path.stat().st_size // (1024 * 1024)
+                        if self.component.destination_path.exists()
+                        else 0
+                    )
+                    self.status_label.setText(
+                        f"<font color='green'>Found at {self.component.destination_path}<br/>Size: {file_size} MB</font>"
+                    )
             self.download_button.setVisible(False)
             self.progress_bar.setVisible(False)
         elif self.component.error:
@@ -175,7 +182,7 @@ class ComponentWidget(QWidget):
             self.progress_bar.setVisible(False)
 
     def update_progress(self, percent):
-        self.progress_bar.setRange(0,100)
+        self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(percent)
 
 
@@ -194,8 +201,8 @@ class DownloadThread(QThread):
             asyncio.run(self._download_files_async())
         except Exception as e:
             logger.error(f"Downloader thread failed: {e}")
-            for component in self.components: # fail all on thread error
-                 if component.downloading:
+            for component in self.components:  # fail all on thread error
+                if component.downloading:
                     self.finished_signal.emit(component, str(e))
 
     async def _download_files_async(self):
@@ -210,7 +217,11 @@ class DownloadThread(QThread):
                     self.finished_signal.emit(component, "")
 
     async def _download_file(self, client: httpx.AsyncClient, component: DownloadableComponent):
-        download_path = component.destination_path.with_suffix(".zip.download") if component.is_zip else component.destination_path.with_suffix(".download")
+        download_path = (
+            component.destination_path.with_suffix(".zip.download")
+            if component.is_zip
+            else component.destination_path.with_suffix(".download")
+        )
         try:
             async with client.stream("GET", component.download_url, follow_redirects=True) as response:
                 response.raise_for_status()
@@ -225,15 +236,17 @@ class DownloadThread(QThread):
                             self.progress_signal.emit(component, percent)
 
             if component.is_zip:
-                with zipfile.ZipFile(download_path, 'r') as zip_ref:
+                with zipfile.ZipFile(download_path, "r") as zip_ref:
                     # find executable in zip
-                    exe_files = [f for f in zip_ref.namelist() if f.endswith(KATAGO_EXE_NAME) and not f.startswith("__MACOSX")]
+                    exe_files = [
+                        f for f in zip_ref.namelist() if f.endswith(KATAGO_EXE_NAME) and not f.startswith("__MACOSX")
+                    ]
                     if not exe_files:
                         raise Exception(f"Katago executable not found in zip {download_path}")
                     internal_exe_path = exe_files[0]
-                    with zip_ref.open(internal_exe_path) as source, open(component.destination_path, 'wb') as target:
-                         shutil.copyfileobj(source, target)
-                os.chmod(component.destination_path, 0o755) # make executable
+                    with zip_ref.open(internal_exe_path) as source, open(component.destination_path, "wb") as target:
+                        shutil.copyfileobj(source, target)
+                os.chmod(component.destination_path, 0o755)  # make executable
             else:
                 shutil.move(download_path, component.destination_path)
 
@@ -261,8 +274,8 @@ class ComponentsDownloaderDialog(QDialog):
             return base_url + "katago-v1.16.0-opencl-linux-x64.zip"
         elif system == "Windows":
             return base_url + "katago-v1.16.0-opencl-windows-x64.zip"
-        elif system == "Darwin": # MacOS
-             return base_url + "katago-v1.16.0-opencl-macos-x64.zip"
+        elif system == "Darwin":  # MacOS
+            return base_url + "katago-v1.16.0-opencl-macos-x64.zip"
         raise RuntimeError(f"Unsupported OS for KataGo download: {system}")
 
     def _define_components(self) -> list[DownloadableComponent]:
@@ -272,7 +285,7 @@ class ComponentsDownloaderDialog(QDialog):
                 destination_dir=KATAGO_DIR,
                 destination_filename=KATAGO_EXE_NAME,
                 download_url=self._get_katago_url(),
-                is_zip=True
+                is_zip=True,
             ),
             DownloadableComponent(
                 name="KataGo Model (28b)",
@@ -372,7 +385,7 @@ class ComponentsDownloaderDialog(QDialog):
 
         # Get KataGo path - either from PATH or downloaded location
         katago_component = self.components[0]  # KataGo Engine is first
-        if hasattr(katago_component, '_path_katago'):
+        if hasattr(katago_component, "_path_katago"):
             katago_path = katago_component._path_katago
         else:
             katago_path = KATAGO_PATH
@@ -380,7 +393,7 @@ class ComponentsDownloaderDialog(QDialog):
         return {
             "katago_path": katago_path,
             "model_path": self.components[1].destination_path,
-            "human_model_path": self.components[2].destination_path
+            "human_model_path": self.components[2].destination_path,
         }
 
     def get_katago_version_info(self) -> tuple[str, str]:
@@ -389,7 +402,7 @@ class ComponentsDownloaderDialog(QDialog):
         if not katago_component.found:
             return "Unknown", "Unknown"
 
-        if hasattr(katago_component, '_path_katago'):
+        if hasattr(katago_component, "_path_katago"):
             katago_path = katago_component._path_katago
         else:
             katago_path = KATAGO_PATH

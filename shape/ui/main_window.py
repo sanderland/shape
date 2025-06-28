@@ -48,9 +48,13 @@ class MainWindow(QMainWindow):
     def set_engine(self, katago_engine):
         self.katago_engine = katago_engine
         # Update window title with version info
-        shape_version = "0.1.0"  # From pyproject.toml
-        katago_version = getattr(katago_engine, 'katago_version', 'Unknown')
-        katago_backend = getattr(katago_engine, 'katago_backend', 'Unknown')
+        try:
+            from importlib.metadata import version
+            shape_version = version("goshape")
+        except ImportError:
+            shape_version = "dev"  # Fallback for development
+        katago_version = getattr(katago_engine, "katago_version", "Unknown")
+        katago_backend = getattr(katago_engine, "katago_backend", "Unknown")
         self.setWindowTitle(f"SHAPE v{shape_version} running KataGo {katago_version} ({katago_backend})")
         self.update_state()
 
