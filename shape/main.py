@@ -1,6 +1,4 @@
 import argparse
-import os
-import shutil
 import signal
 import sys
 
@@ -38,7 +36,7 @@ class SHAPEApp:
 
 def main():
     parser = argparse.ArgumentParser(description="SHAPE: Shape Habits Analysis and Personalized Evaluation")
-    args = parser.parse_args()
+    parser.parse_args()
 
     shape = SHAPEApp()
     sys.exit(shape.run())

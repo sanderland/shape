@@ -1,4 +1,3 @@
-import asyncio
 import copy
 import json
 import os
@@ -7,12 +6,8 @@ import subprocess
 import threading
 import traceback
 from collections.abc import Callable
-from pathlib import Path
 
-import httpx
 from PySide6.QtWidgets import QApplication, QDialog
-from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QFont
 
 from shape.game_logic import GameNode
 from shape.katago.downloader import ComponentsDownloaderDialog
@@ -51,7 +46,7 @@ class KataGoEngine:
             paths = dialog.get_paths()
             if not paths:
                 raise RuntimeError("Could not retrieve component paths even after download dialog.")
-        
+
         # Store version info for the main window title
         self.katago_version, self.katago_backend = dialog.get_katago_version_info()
 

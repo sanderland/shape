@@ -6,24 +6,19 @@ import subprocess
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from functools import partial
-from typing import Optional
 
 import httpx
-from PySide6.QtWidgets import (
-    QApplication,
-    QDialog,
-    QVBoxLayout,
-    QLabel,
-    QPushButton,
-    QProgressBar,
-    QTextEdit,
-    QHBoxLayout,
-    QWidget,
-    QSizePolicy,
-)
-from PySide6.QtCore import Qt, QThread, Signal, QObject
+from PySide6.QtCore import QThread, Signal
 from PySide6.QtGui import QFont
+from PySide6.QtWidgets import (
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QProgressBar,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from shape.utils import setup_logging
 
@@ -45,7 +40,7 @@ def get_katago_version_info(katago_path: Path) -> tuple[str, str]:
             lines = result.stdout.strip().split('\n')
             version = "Unknown"
             backend = "Unknown"
-            
+
             for line in lines:
                 if line.startswith("KataGo v"):
                     version = line.split()[1]  # Extract version like "v1.15.3"
@@ -59,7 +54,7 @@ def get_katago_version_info(katago_path: Path) -> tuple[str, str]:
                         backend = "CPU"
                     else:
                         backend = line.split()[-1]  # Last word of the line
-            
+
             return version, backend
         else:
             logger.warning(f"KataGo version command failed: {result.stderr}")
@@ -81,7 +76,7 @@ class DownloadableComponent:
     is_zip: bool = False
     found: bool = field(init=False, default=False)
     downloading: bool = field(init=False, default=False)
-    error: Optional[str] = field(init=False, default=None)
+    error: str | None = field(init=False, default=None)
 
     def __post_init__(self):
         self.destination_dir.mkdir(parents=True, exist_ok=True)
@@ -101,7 +96,7 @@ class DownloadableComponent:
                 # Update destination to point to the PATH version
                 self._path_katago = Path(path_katago)
                 return True
-        
+
         self.found = self.destination_path.exists()
         if self.found:
             self.error = None # reset error on found
@@ -154,7 +149,7 @@ class ComponentWidget(QWidget):
                 else:
                     katago_path = self.component.destination_path
                     location_text = f"Found at {katago_path}"
-                
+
                 version, backend = get_katago_version_info(katago_path)
                 self.status_label.setText(f"<font color='green'>{location_text}<br/>Version: {version} ({backend})</font>")
             else:
@@ -208,7 +203,7 @@ class DownloadThread(QThread):
             tasks = [self._download_file(client, c) for c in self.components]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            for component, result in zip(self.components, results):
+            for component, result in zip(self.components, results, strict=False):
                 if isinstance(result, Exception):
                     self.finished_signal.emit(component, str(result))
                 else:
@@ -261,7 +256,6 @@ class ComponentsDownloaderDialog(QDialog):
 
     def _get_katago_url(self):
         system = platform.system()
-        machine = platform.machine()
         base_url = "https://github.com/lightvector/KataGo/releases/download/v1.16.0/"
         if system == "Linux":
             return base_url + "katago-v1.16.0-opencl-linux-x64.zip"
@@ -356,7 +350,7 @@ class ComponentsDownloaderDialog(QDialog):
     def check_all_found(self):
         all_found = all(c.check_if_found() for c in self.components)
         downloading = any(c.downloading for c in self.components)
-        
+
         # Update title based on status
         if downloading:
             self.title_label.setText("Downloading components...")
@@ -371,33 +365,33 @@ class ComponentsDownloaderDialog(QDialog):
         self.close_button.setText("Continue" if all_found else "Close")
         if all_found:
             self.download_all_button.setVisible(False)
-            
+
     def get_paths(self) -> dict[str, Path] | None:
         if not all(c.found for c in self.components):
             return None
-        
+
         # Get KataGo path - either from PATH or downloaded location
         katago_component = self.components[0]  # KataGo Engine is first
         if hasattr(katago_component, '_path_katago'):
             katago_path = katago_component._path_katago
         else:
             katago_path = KATAGO_PATH
-            
+
         return {
             "katago_path": katago_path,
             "model_path": self.components[1].destination_path,
             "human_model_path": self.components[2].destination_path
         }
-    
+
     def get_katago_version_info(self) -> tuple[str, str]:
         """Get KataGo version and backend info for the main window title."""
         katago_component = self.components[0]  # KataGo Engine is first
         if not katago_component.found:
             return "Unknown", "Unknown"
-            
+
         if hasattr(katago_component, '_path_katago'):
             katago_path = katago_component._path_katago
         else:
             katago_path = KATAGO_PATH
-            
-        return get_katago_version_info(katago_path) 
+
+        return get_katago_version_info(katago_path)
