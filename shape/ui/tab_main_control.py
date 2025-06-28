@@ -27,14 +27,14 @@ RANK_RANGE = (-20, 9)
 def get_rank_from_id(id: int) -> str:
     if id < 0:
         return f"{-id}k"
-    return f"{id+1}d"
+    return f"{id + 1}d"
 
 
 def get_human_profile_from_id(id: int, preaz: bool = False) -> str | None:
     if id >= RANK_RANGE[1] + 10:
         return None  # AI
     if id >= RANK_RANGE[1]:
-        return f"proyear_2023"
+        return "proyear_2023"
     return f"{'preaz_' if preaz else 'rank_'}{get_rank_from_id(id)}"
 
 
@@ -237,16 +237,16 @@ class ControlPanel(SettingsTab):
             player_prob, player_relative_prob = currentlv_analysis.human_policy.at(node.move)
             target_prob, target_relative_prob = target_analysis.human_policy.at(node.move)
             ai_prob, ai_relative_prob = ai_analysis.ai_policy.at(node.move)
-            return dict(
-                player_prob=player_prob,
-                target_prob=target_prob,
-                ai_prob=ai_prob,
-                player_relative_prob=player_relative_prob,
-                target_relative_prob=target_relative_prob,
-                ai_relative_prob=ai_relative_prob,
-                move_like_target=target_prob / max(player_prob + target_prob, 1e-10),
-                mistake_size=node.mistake_size(),
-            )
+            return {
+                "player_prob": player_prob,
+                "target_prob": target_prob,
+                "ai_prob": ai_prob,
+                "player_relative_prob": player_relative_prob,
+                "target_relative_prob": target_relative_prob,
+                "ai_relative_prob": ai_relative_prob,
+                "move_like_target": target_prob / max(player_prob + target_prob, 1e-10),
+                "mistake_size": node.mistake_size(),
+            }
         return None
 
     def get_heatmap_settings(self):

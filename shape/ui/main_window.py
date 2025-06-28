@@ -2,15 +2,15 @@ import logging
 
 import numpy as np
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenu,
     QMenuBar,
-    QPushButton,
     QStatusBar,
     QTabWidget,
     QVBoxLayout,
@@ -47,6 +47,16 @@ class MainWindow(QMainWindow):
 
     def set_engine(self, katago_engine):
         self.katago_engine = katago_engine
+        # Update window title with version info
+        try:
+            from importlib.metadata import version
+
+            shape_version = version("goshape")
+        except ImportError:
+            shape_version = "dev"  # Fallback for development
+        katago_version = getattr(katago_engine, "katago_version", "Unknown")
+        katago_backend = getattr(katago_engine, "katago_backend", "Unknown")
+        self.setWindowTitle(f"SHAPE v{shape_version} running KataGo {katago_version} ({katago_backend})")
         self.update_state()
 
     def set_logging_level(self, level):
@@ -93,10 +103,10 @@ class MainWindow(QMainWindow):
             best_ai_move = current_analysis[None].ai_moves()[0]["move"]
             if policy_moves:
                 if best_ai_move == "pass":
-                    logger.info(f"Passing because it is the best AI move")
+                    logger.info("Passing because it is the best AI move")
                     self.make_move(None)
                 else:
-                    moves, probs, _ = zip(*policy_moves)
+                    moves, probs, _ = zip(*policy_moves, strict=False)
                     move = np.random.choice(moves, p=np.array(probs) / sum(probs))
                     logger.info(f"Making sampled move: {move} from {len(policy_moves)} cuttoff due to {reason}")
                     self.make_move(move.coords)
@@ -133,10 +143,10 @@ class MainWindow(QMainWindow):
     def save_as_sgf(self, to_clipboard: bool = False):
         def get_player_name(color):
             if self.control_panel.get_player_color() == color:
-                return f"Human"
+                return "Human"
             else:
                 profile = self.control_panel.get_human_profiles()["opponent"]
-                return f"AI ({profile})" if profile else f"KataGo"
+                return f"AI ({profile})" if profile else "KataGo"
 
         player_names = {bw: get_player_name(bw) for bw in "BW"}
         sgf_data = self.game_logic.export_sgf(player_names)
@@ -218,7 +228,7 @@ class MainWindow(QMainWindow):
         node.store_analysis(analysis, human_profile)
         num_queries = self.katago_engine.num_outstanding_queries()
         self.update_status_bar(
-            f"Ready"
+            "Ready"
             if num_queries == 0
             else f"{human_profile or 'AI'} analysis for {node.move.gtp() if node.move else 'root'} received, still working on {num_queries} queries"
         )
@@ -321,7 +331,7 @@ class MainWindow(QMainWindow):
         menu_bar.addMenu(logging_menu)
         for level in ["DEBUG", "INFO", "WARNING", "ERROR"]:
             logging_action = QAction(level.capitalize(), self)
-            logging_action.triggered.connect(lambda l=level: self.set_logging_level(l))
+            logging_action.triggered.connect(lambda level=level: self.set_logging_level(level))
             logging_menu.addAction(logging_action)
 
     def on_pass_move(self):

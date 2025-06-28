@@ -55,6 +55,7 @@ QTableWidget {
 }
 """
 
+
 # Helper functions
 def create_spin_box(min_value, max_value, default_value):
     spin_box = QSpinBox()

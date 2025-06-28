@@ -37,8 +37,8 @@ class PolicyData:
         secondary_data_data = secondary_data if secondary_data is not None else self.grid
         moves = [
             (Move(coords=(col, row)), prob, d)
-            for row, (policy_row, secondary_data_row) in enumerate(zip(self.grid, secondary_data_data))
-            for col, (prob, d) in enumerate(zip(policy_row, secondary_data_row))
+            for row, (policy_row, secondary_data_row) in enumerate(zip(self.grid, secondary_data_data, strict=False))
+            for col, (prob, d) in enumerate(zip(policy_row, secondary_data_row, strict=False))
             if prob > 0
         ]
         if self.pass_prob > 0 and not exclude_pass:

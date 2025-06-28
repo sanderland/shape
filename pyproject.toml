@@ -1,29 +1,58 @@
-[tool.poetry]
-name = "shape"
+[project]
+name = "goshape"
 version = "0.1.0"
-description = ""
-authors = ["Sander Land"]
+description = "Shape Habits Analysis and Personalized Evaluation"
+authors = [{name = "Sander Land"}]
 readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "PySide6>=6.5.0",
+    "pyqtgraph>=0.13.7",
+    "pysgf>=0.9.0",
+    "numpy>=2.1.2",
+    "httpx>=0.25.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.10,<3.13"
-PySide6 = "^6.5.0"
-pyqtgraph = "^0.13.7"
-pysgf = "^0.9.0"
-numpy = "^2.1.2"
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+goshape = "shape.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["shape"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long, handled by formatter
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
 
 [tool.vulture]
 ignore_names = ["paintEvent", "keyPressEvent", "mousePressEvent"]
 
-[tool.black]
-line-length = 120
-
-[tool.isort]
-profile = "black"
-
-[tool.poetry.scripts]
-shape = "shape.main:main"
-
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -75,7 +75,7 @@ class AnalysisPanel(SettingsTab):
             self.top_moves_table.setRowCount(len(top_moves))
             for row, move in enumerate(top_moves):
                 self.top_moves_table.setItem(row, 0, QTableWidgetItem(move["move"]))
-                self.top_moves_table.setItem(row, 1, QTableWidgetItem(f"{move['winrate']*100:.1f}%"))
+                self.top_moves_table.setItem(row, 1, QTableWidgetItem(f"{move['winrate'] * 100:.1f}%"))
                 self.top_moves_table.setItem(row, 2, QTableWidgetItem(f"{move['scoreLead']:.1f}"))
                 self.top_moves_table.setItem(row, 3, QTableWidgetItem(f"{move['visits']}"))
 
@@ -95,7 +95,7 @@ class AnalysisPanel(SettingsTab):
         self.top_moves_table.clearContents()
 
     def update_graph(self, scores: list[tuple[int, float]]):
-        moves, filtered_values = zip(*scores)
+        moves, filtered_values = zip(*scores, strict=False)
         self.graph_widget.plot(moves, filtered_values, pen=pg.mkPen(color="b", width=2), clear=True)
         self.graph_widget.setYRange(min(filtered_values) - 0.1, max(filtered_values) + 0.1)
         self.graph_widget.setXRange(0, max(1, len(moves) - 1))
