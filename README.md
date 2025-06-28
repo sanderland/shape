@@ -4,15 +4,17 @@ SHAPE is an app to play Go with AI feedback, specifically designed to point out 
 
 This is an experimental project, and is unlikely to ever become very polished.
 
-## Installation
+## Quick Start
 
-* Run install.sh to download the models.
-* Run `poetry shell` and then `poetry install` to install the app in a local Python environment.
-  * Alternatively, run `pip install .` to install the app in your current Python environment.
+Run the application directly using `uvx`:
 
-## Usage
+```bash
+uvx goshape
+```
 
-* Run `shape` to start the app, or use `python shape/main.py`
+The first time you run this, `uv` will automatically download the package, create a virtual environment, and install all dependencies.
+
+When the application starts for the first time, it will check for the required KataGo models in `~/.katrain/`. If they are not found, a dialog will appear to guide you through downloading them.
 
 ## Manual
 
@@ -34,4 +36,17 @@ The policy heatmap shows the probability of the top moves being made for your cu
 Note that a move being probable does not mean it is a good move.
 You can select multiple heatmaps to get a blended view, where size/number is the average probability, and the color is the average rank (current, target, AI).
 
+
+## TODO list from Gemini
+
+Based on a code review, here are some suggested areas for improvement:
+
+### High Impact
+- **User-Friendly Errors (`main.py`):** Show GUI dialogs for errors instead of crashing the application.
+
+### Medium Impact
+- **Refactor `GameNode` (`game_logic.py`):** Extract board state and rule logic into a separate `Board` class to simplify `GameNode` and improve modularity.
+
+### Low Impact
+- **Code Clarity (`game_logic.py`):** Improve code readability.
 

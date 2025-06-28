@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import json
 import os
@@ -6,8 +7,15 @@ import subprocess
 import threading
 import traceback
 from collections.abc import Callable
+from pathlib import Path
+
+import httpx
+from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui import QFont
 
 from shape.game_logic import GameNode
+from shape.katago.downloader import ComponentsDownloaderDialog
 from shape.utils import setup_logging
 
 logger = setup_logging()
@@ -24,33 +32,42 @@ class KataGoEngine:
         "stone_scoring": "stone_scoring",
     }
 
-    def __init__(self, katago_path, model_folder=None):
-        if model_folder == None:
-            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        else:
-            base_dir = os.path.abspath(model_folder)
+    def __init__(self, model_folder=None):
+        # analysis.cfg is now stored in the package
+        config_path = os.path.join(os.path.dirname(__file__), "analysis.cfg")
+        if not os.path.exists(config_path):
+            raise RuntimeError(f"Analysis config not found at {config_path}")
 
-        config_path = os.path.join(base_dir, "analysis.cfg")
-        model_path = os.path.join(base_dir, "katago-28b.bin.gz")
-        human_model_path = os.path.join(base_dir, "katago-human.bin.gz")
-        if not os.path.exists(config_path) or not os.path.exists(model_path) or not os.path.exists(human_model_path):
-            raise RuntimeError("Models not found. Run install.sh to download the models.")
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication([])
+
+        dialog = ComponentsDownloaderDialog()
+        paths = dialog.get_paths()
+        if not paths:
+            result = dialog.exec()
+            if result != QDialog.DialogCode.Accepted:
+                raise RuntimeError("KataGo components are required but download was cancelled or failed.")
+            paths = dialog.get_paths()
+            if not paths:
+                raise RuntimeError("Could not retrieve component paths even after download dialog.")
 
         command = [
-            os.path.abspath(katago_path),
+            os.path.abspath(paths["katago_path"]),
             "analysis",
             "-config",
             config_path,
             "-model",
-            model_path,
+            str(paths["model_path"]),
             "-human-model",
-            human_model_path,
+            str(paths["human_model_path"]),
         ]
         self.query_queue = queue.Queue()
         self.response_callbacks = {}
         self.process = self._start_process(command)
         if self.process.poll() is not None:
-            raise RuntimeError(f"KataGo process exited unexpectedly on startup: {self.process.stderr.read()}")
+            stderr_output = self.process.stderr.read() if self.process.stderr else "No stderr available"
+            raise RuntimeError(f"KataGo process exited unexpectedly on startup: {stderr_output}")
 
         threads = [
             threading.Thread(target=self._log_stderr, daemon=True),
@@ -108,7 +125,7 @@ class KataGoEngine:
         nodes = node.nodes_from_root
         moves = [m for node in nodes for m in node.moves]
         self.query_counter += 1
-        query_id = f"{len(nodes)}_{(moves or ['root'])[-1]}_{human_profile_settings.get('humanSLProfile','ai')}_{max_visits}v_{self.query_counter}"
+        query_id = f"{len(nodes)}_{(moves or ['root'])[-1]}_{human_profile_settings.get('humanSLProfile', 'ai')}_{max_visits}v_{self.query_counter}"
         query = {
             "id": query_id,
             "rules": self.RULESETS_ABBR.get(node.ruleset.lower(), node.ruleset.lower()),
@@ -157,5 +174,5 @@ class KataGoEngine:
             {k: v for k, v in move.items() if k in ["move", "visits", "winrate"]}
             for move in response.get("moveInfos", [])
         ]
-        response["moveInfos"] = moves[:5] + [f"{len(moves)-5} more..."] if len(moves) > 5 else moves
+        response["moveInfos"] = moves[:5] + [f"{len(moves) - 5} more..."] if len(moves) > 5 else moves
         logger.debug(f"Received response: {json.dumps(response, indent=2)}")

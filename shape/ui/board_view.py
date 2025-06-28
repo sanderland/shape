@@ -1,17 +1,16 @@
 import numpy as np
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import (
     QBrush,
     QColor,
     QFont,
-    QLinearGradient,
     QPainter,
     QPen,
     QRadialGradient,
 )
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
-from shape.game_logic import GameNode, Move, PolicyData
+from shape.game_logic import Move, PolicyData
 from shape.utils import setup_logging
 
 logger = setup_logging()
@@ -34,7 +33,7 @@ class BoardView(QWidget):
     def sizeHint(self):
         return QSize(600, 600)
 
-    def __init__(self, main_window: "MainWindow", parent=None):
+    def __init__(self, main_window, parent=None):
         super().__init__(parent)
         self.main_window = main_window
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -162,12 +161,12 @@ class BoardView(QWidget):
                 Qt.AlignVCenter | Qt.AlignRight,
                 str(i + 1),
             )
-        for (text, _, size_adj), nav_rect in zip(self.nav_buttons, self.nav_rects):
+        for (text, _, size_adj), nav_rect in zip(self.nav_buttons, self.nav_rects, strict=False):
             painter.setFont(QFont("Arial", self.coord_font_size * size_adj, QFont.Bold))
             painter.drawText(nav_rect, Qt.AlignCenter, text)
 
     def mousePressEvent(self, event):
-        for (_, callback, _), rect in zip(self.nav_buttons, self.nav_rects):
+        for (_, callback, _), rect in zip(self.nav_buttons, self.nav_rects, strict=False):
             if rect.contains(event.pos()):
                 callback()
                 return
@@ -218,7 +217,7 @@ class BoardView(QWidget):
             rank_gradient = np.tile(np.linspace(0, 2, self.board_size), (self.board_size, 1)).T
             heatmap_mean_prob = np.append(prob_gradient.ravel(), 0)
             heatmap_mean_rank = np.append(rank_gradient.ravel(), 0)
-            sampling_settings = dict(min_p=0)
+            sampling_settings = {"min_p": 0}
 
         if heatmap_mean_prob is not None:
             top_moves, _ = PolicyData(heatmap_mean_prob).sample(
@@ -236,7 +235,7 @@ class BoardView(QWidget):
             x = center.x() - size / 2
             y = center.y() - size / 2
 
-            text = "" if rel_prob < 0.01 else f"{prob*100:.0f}"
+            text = "" if rel_prob < 0.01 else f"{prob * 100:.0f}"
 
             painter.setBrush(QBrush(color))
             painter.setPen(QPen(Qt.black))
