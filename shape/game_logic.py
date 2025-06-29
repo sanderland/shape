@@ -283,11 +283,9 @@ class GameLogic:
             self.current_node = self.current_node.parent
 
     def redo_move(self, n: int = 1):
-        # TODO: this needs to be smarter if there are multiple variations
-        if self.current_node.children:
-            new_node = self.current_node.children[0]
-            assert isinstance(new_node, GameNode)
-            self.current_node = new_node
+        while (n := n - 1) >= 0 and self.current_node.children:
+            assert isinstance(self.current_node.children[0], GameNode)
+            self.current_node = self.current_node.children[0]
 
     def get_score_history(self) -> list[tuple[int, float]]:
         """Returns a list of (move_number, score) tuples."""
