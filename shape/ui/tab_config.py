@@ -1,11 +1,11 @@
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QFormLayout, QGroupBox, QHBoxLayout, QLabel, QVBoxLayout
+
 from shape.ui.ui_utils import (
     SettingsTab,
-    create_config_section,
     create_double_spin_box,
     create_spin_box,
 )
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QGroupBox, QFormLayout, QLabel, QHBoxLayout, QVBoxLayout
 
 
 class ConfigPanel(SettingsTab):

@@ -1,7 +1,6 @@
 import numpy as np
-import pytest
 
-from shape.game_logic import PolicyData, GameLogic, Move
+from shape.game_logic import GameLogic, Move, PolicyData
 
 
 def test_policy_data_sample_top_k():

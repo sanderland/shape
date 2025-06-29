@@ -81,16 +81,6 @@ class BoardView(QWidget):
 
     def draw_board(self, painter):
         painter.fillRect(self.rect(), self.WOOD_COLOR)
-        # Add a subtle wood grain texture
-        for i in range(100):
-            painter.setPen(
-                QPen(QColor(0, 0, 0, np.random.randint(5, 15)), np.random.uniform(0.5, 1.5), Qt.PenStyle.SolidLine)
-            )
-            x1 = np.random.uniform(0, self.width())
-            y1 = np.random.uniform(0, self.height())
-            x2 = x1 + np.random.uniform(-100, 100)
-            y2 = y1 + np.random.uniform(-10, 10)
-            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
 
         if self.main_window.game_logic.current_node.autoplay_halted_reason:
             overlay_color = QColor(255, 0, 0, 30)  # Semi-transparent red overlay
