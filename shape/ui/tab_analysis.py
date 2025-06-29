@@ -1,4 +1,13 @@
-import pyqtgraph as pg
+import os
+
+# Set Qt API before importing matplotlib
+os.environ["QT_API"] = "pyside6"
+
+import matplotlib
+
+matplotlib.use("Qt5Agg")
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHeaderView,
@@ -32,11 +41,15 @@ class AnalysisPanel(SettingsTab):
         self.top_moves_table = self.create_top_moves_table()
         self.addWidget(self.top_moves_table)
 
-        self.graph_widget = pg.PlotWidget()
-        self.graph_widget.setBackground("w")
-        self.graph_widget.setLabel("left", "Score")
-        self.graph_widget.showGrid(x=True, y=True, alpha=0.3)
-        self.addWidget(self.graph_widget)
+        # Create matplotlib figure and canvas
+        self.figure = Figure(figsize=(8, 4))
+        self.canvas = FigureCanvas(self.figure)
+        self.axes = self.figure.add_subplot(111)
+        self.axes.set_xlabel("Move Number")
+        self.axes.set_ylabel("Score")
+        self.axes.grid(True, alpha=0.3)
+        self.figure.tight_layout()
+        self.addWidget(self.canvas)
         self.addStretch(1)
 
         extra_visits_button = QPushButton("Deeper AI Analysis")
@@ -55,9 +68,9 @@ class AnalysisPanel(SettingsTab):
     def create_top_moves_table(self):
         table = QTableWidget(5, 4)
         table.setHorizontalHeaderLabels(["Move", "B Win Rate", "B Score", "Visits"])
-        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        table.setEditTriggers(QTableWidget.NoEditTriggers)
-        table.setFocusPolicy(Qt.NoFocus)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         table.setMinimumHeight(300)
         return table
 
@@ -95,7 +108,29 @@ class AnalysisPanel(SettingsTab):
         self.top_moves_table.clearContents()
 
     def update_graph(self, scores: list[tuple[int, float]]):
+        if not scores:
+            scores = [(0, 0.0)]
+
         moves, filtered_values = zip(*scores, strict=False)
-        self.graph_widget.plot(moves, filtered_values, pen=pg.mkPen(color="b", width=2), clear=True)
-        self.graph_widget.setYRange(min(filtered_values) - 0.1, max(filtered_values) + 0.1)
-        self.graph_widget.setXRange(0, max(1, len(moves) - 1))
+
+        # Clear the plot and redraw
+        self.axes.clear()
+        self.axes.plot(moves, filtered_values, "b-o", linewidth=2, markersize=6)
+        self.axes.set_xlabel("Move Number")
+        self.axes.set_ylabel("Score")
+        self.axes.grid(True, alpha=0.3)
+
+        # Add dashed horizontal line at score=0
+        self.axes.axhline(y=0, color="gray", linestyle="--", alpha=0.7)
+
+        # Set x-axis from 0 to max move number (no padding)
+        max_move = max(moves) if moves else 0
+        self.axes.set_xlim(0, max(1, max_move))
+
+        # Center y-axis on 0
+        y_min, y_max = min(filtered_values), max(filtered_values)
+        y_abs_max = max(abs(y_min), abs(y_max), 0.5)  # Minimum range of 1.0 total
+        self.axes.set_ylim(-y_abs_max, y_abs_max)
+
+        # Refresh the canvas
+        self.canvas.draw()

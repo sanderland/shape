@@ -42,8 +42,10 @@ class PolicyData:
             if prob > 0
         ]
         if self.pass_prob > 0 and not exclude_pass:
-            moves.append(("pass", self.pass_prob, None))
+            moves.append((Move(coords=None), self.pass_prob, self.pass_prob))
         moves.sort(key=lambda x: x[1], reverse=True)
+        if not moves:
+            return [], "no_moves"
         highest_prob = moves[0][1]
         top_moves = []
         total_prob = 0
@@ -95,14 +97,37 @@ class GameNode(SGFNode):
     def __init__(self, parent: "GameNode | None" = None, properties=None, move=None):
         super().__init__(parent, properties, move)
         if parent:
-            assert move is not None
-            self.board_state = self._board_state_after_move(parent.board_state, move)
+            if move:
+                self.board_state = self._board_state_after_move(parent.board_state, move)
+            else:
+                self.board_state = copy.deepcopy(parent.board_state)
         else:
             bx, by = self.board_size
             self.board_state: list[list[str | None]] = [[None for _ in range(bx)] for _ in range(by)]
         self.analyses = {}
         self.ai_move_requested = False  # flag to indicate if ai move was manually requested
         self.autoplay_halted_reason: str | None = None  # flag to indicate if autoplay was automatically halted
+
+    def _recalculate_board_states(self):
+        if self.parent:
+            assert isinstance(self.parent, GameNode)
+            if self.move:
+                self.board_state = self._board_state_after_move(self.parent.board_state, self.move)
+            else:
+                self.board_state = copy.deepcopy(self.parent.board_state)
+        else:
+            bx, by = self.board_size
+            self.board_state: list[list[str | None]] = [[None for _ in range(bx)] for _ in range(by)]
+
+        for child in self.children:
+            assert isinstance(child, GameNode)
+            child._recalculate_board_states()
+
+    def get_last_node(self):
+        node = self
+        while node.children:
+            node = node.children[0]
+        return node
 
     @property
     def square_board_size(self) -> int:
@@ -111,7 +136,7 @@ class GameNode(SGFNode):
         return bx
 
     def game_ended(self) -> bool:
-        return self.is_pass and self.parent.is_pass
+        return self.parent is not None and self.is_pass and self.parent.is_pass
 
     def delete_child(self, child: "GameNode"):
         self.children = [c for c in self.children if c is not child]
@@ -202,7 +227,10 @@ class GameNode(SGFNode):
 
     def get_analysis(self, key: str | None, parent: bool = False) -> Analysis | None:
         if parent:
-            return self.parent.get_analysis(key) if self.parent else None
+            if not self.parent:
+                return None
+            assert isinstance(self.parent, GameNode)
+            return self.parent.get_analysis(key)
         analysis = self.analyses.get(key)
         return None if analysis is Analysis.REQUESTED else analysis
 
@@ -210,6 +238,7 @@ class GameNode(SGFNode):
         current_analysis = self.get_analysis(None)
         parent_analysis = None
         if self.parent:
+            assert isinstance(self.parent, GameNode)
             parent_analysis = self.parent.get_analysis(None)
 
         if not current_analysis or not parent_analysis:
@@ -233,7 +262,7 @@ class GameLogic:
         self.new_game()
 
     def new_game(self, board_size=19, **rules):
-        self.current_node = GameNode(properties={"RU": "JP", "KM": 6.5, "SZ": board_size, **rules})
+        self.current_node: GameNode = GameNode(properties={"RU": "JP", "KM": 6.5, "SZ": board_size, **rules})
 
     def __getattr__(self, attr):
         if not hasattr(self.current_node, attr):
@@ -243,23 +272,64 @@ class GameLogic:
     def make_move(self, move: Move) -> bool:
         if not self.current_node._is_valid_move(move):
             return False
-        self.current_node = self.current_node.play(move)
+        new_node = self.current_node.play(move)
+        assert isinstance(new_node, GameNode)
+        self.current_node = new_node
         return True
 
     def undo_move(self, n: int = 1):
         while (n := n - 1) >= 0 and self.current_node.parent:
+            assert isinstance(self.current_node.parent, GameNode)
             self.current_node = self.current_node.parent
 
     def redo_move(self, n: int = 1):
         while (n := n - 1) >= 0 and self.current_node.children:
+            assert isinstance(self.current_node.children[0], GameNode)
             self.current_node = self.current_node.children[0]
 
     def get_score_history(self) -> list[tuple[int, float]]:
-        nodes = self.current_node.nodes_from_root
-        return [(node.depth, ai_analysis.ai_score()) for node in nodes if (ai_analysis := node.get_analysis(None))]
+        """Returns a list of (move_number, score) tuples."""
+        history = []
+        node = self.current_node
+        while node:
+            analysis = node.get_analysis(None)
+            if analysis and analysis.ai_score() is not None:
+                score = analysis.ai_score()
+                if score is not None:
+                    move_number = getattr(node, "move_number", 0)
+                    history.append((move_number, score))
+            if not node.parent:
+                break
+            assert isinstance(node.parent, GameNode)
+            node = node.parent
+        return list(reversed(history))
+
+    def get_full_history(self) -> list[GameNode]:
+        history = []
+        node = self.current_node
+        while node:
+            history.append(node)
+            if not node.parent:
+                break
+            assert isinstance(node.parent, GameNode)
+            node = node.parent
+        return list(reversed(history))
 
     def export_sgf(self, player_names):
-        return self.current_node.root.sgf()
+        root_node = self.get_full_history()[0]
+        root_node.properties["PB"] = player_names.get("B", "Black")
+        root_node.properties["PW"] = player_names.get("W", "White")
+        return root_node.sgf()
 
     def import_sgf(self, sgf_data: str):
-        self.current_node = ShapeSGF.parse(sgf_data)
+        try:
+            parsed_sgf_root = ShapeSGF.parse(sgf_data)
+            assert isinstance(parsed_sgf_root, GameNode)
+            parsed_sgf_root._recalculate_board_states()
+            last_node = parsed_sgf_root.get_last_node()
+            assert isinstance(last_node, GameNode)
+            self.current_node = last_node
+            return True
+        except Exception as e:
+            logger.error(f"Failed to import SGF: {e}")
+            return False

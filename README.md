@@ -1,8 +1,8 @@
 # SHAPE: Shape Habits Analysis and Personalized Evaluation
 
-SHAPE is an app to play Go with AI feedback, specifically designed to point out typical bad habits for your current skill level.
+SHAPE is a Go app with AI feedback, designed to help you identify and correct common mistakes based on your skill level.
 
-This is an experimental project, and is unlikely to ever become very polished.
+![SHAPE Application Screenshot](assets/screenshot.png)
 
 ## Quick Start
 
@@ -14,39 +14,60 @@ uvx goshape
 
 The first time you run this, `uv` will automatically download the package, create a virtual environment, and install all dependencies.
 
-When the application starts for the first time, it will check for the required KataGo models in `~/.katrain/`. If they are not found, a dialog will appear to guide you through downloading them.
+When the application starts for the first time, it will also check for the required KataGo models in `~/.katrain/`. If they are not found, a dialog will appear to guide you through downloading them.
 
-## Manual
+## Features
 
-The most important settings are:
+- **Personalized Mistake Analysis**: The AI feedback is tailored to your rank, flagging mistakes that are relevant to your level.
+- **Interactive Board**: A clean, responsive Go board with heatmap visualizations.
+- **Detailed AI Feedback**: An analysis tab shows the score graph and KataGo's top move considerations.
+- **Configurable Opponent**: Play against an AI opponent with customizable rank, style, and behavior.
+- **SGF Support**: Save and load games, or copy/paste SGF data from the clipboard.
 
-- Current Rank: Your current Go skill level, which determines which mistakes are considered "typical" for your level.
-- Target Rank: The skill level you want to aim for. Even if a move is a huge mistake, if it was a mistake still common at that level, it won't be considered relevant.
-- Opponent: The type and level of the AI opponent. 
-  - This supports modern, pre-alphago style, and historical professional style. 
-  - Like the feedback, it is likely to be somewhat weaker than actual professionals or high-dan players.
+## How to Use
 
-The game will automatically halt when a typical mistake is made by you, allowing you to analyze, undo, or just continue.
+The main window is divided into the board on the left and a control panel with three tabs on the right.
 
-Keep in mind that the techniques used are more likely to be helpful up to low-dan levels, and may not be helpful at all at high levels.
+### Board Controls
 
-### Heatmap
+Underneath the board, you will find the main game controls:
+- **Pass**: Pass your turn.
+- **Undo**: Go back one move. This button is only active when there are moves to undo.
+- **Redo**: Go forward one move. This button is only active when you have undone moves.
+- **AI Move**: Force the AI to make a move, even if it is your turn.
 
-The policy heatmap shows the probability of the top moves being made for your current rank, target rank, and AI.
-Note that a move being probable does not mean it is a good move.
-You can select multiple heatmaps to get a blended view, where size/number is the average probability, and the color is the average rank (current, target, AI).
+### The "Play" Tab
 
+This is the main control center for your game.
 
-## TODO list from Gemini
+- **Game Control**:
+  - **Play as**: Choose to play as Black or White.
+  - **Opponent Controls**: Force the AI to move or enable **Auto-play** for the AI to play automatically when it's its turn.
+- **Player Settings**:
+  - **Current Rank**: Your current Go skill level. This is used to determine which mistakes are typical for you.
+  - **Target Rank**: The skill level you want to aim for. Mistakes common at this level won't be flagged.
+  - **Opponent**: The type and level of the AI opponent. This supports modern, pre-AlphaGo style, and historical professional styles.
+- **Heatmap**: Visualize the AI's preferred moves for different player models (Current Rank, Target Rank, AI, and Opponent). You can select multiple heatmaps to get a blended view.
+- **Info Panel**: A collapsible panel (shortcut: `Ctrl+0`) that shows detailed statistics about the last move.
 
-Based on a code review, here are some suggested areas for improvement:
+### The "AI Analysis" Tab
 
-### High Impact
-- **User-Friendly Errors (`main.py`):** Show GUI dialogs for errors instead of crashing the application.
+This tab provides feedback from the AI.
+- **Score Graph**: A graph showing the score progression over the course of the game. The Y-axis is centered at 0, with a dashed line indicating an even game.
+- **Top Moves**: A table showing KataGo's top 5 recommended moves for the current position, including win rate, score lead, and visits.
+- **Deeper AI Analysis**: A button to request a much deeper analysis (more visits) for the current position.
 
-### Medium Impact
-- **Refactor `GameNode` (`game_logic.py`):** Extract board state and rule logic into a separate `Board` class to simplify `GameNode` and improve modularity.
+### The "Settings" Tab
 
-### Low Impact
-- **Code Clarity (`game_logic.py`):** Improve code readability.
+This tab allows you to fine-tune the AI's behavior.
+
+- **Policy Sampling**: These settings affect the AI's move selection and the heatmap visualization. Tooltips are provided in the app for detailed explanations.
+  - **Top K**: Considers only the top K moves.
+  - **Top P**: Considers moves from the smallest set whose cumulative probability exceeds P.
+  - **Min P**: Considers only moves with a probability of at least P times the probability of the best move.
+- **Analysis Settings**:
+  - **Visits**: The number of playouts the AI will perform for its analysis. Higher values lead to stronger play but require more processing time.
+- **Mistake Feedback**: These settings determine when the game will automatically halt. The game halts if the mistake size is above the configured threshold **AND** either of the probability conditions are met.
+
+Keep in mind that the techniques used are more likely to be helpful up to low-dan levels, and may not be as effective at high-dan or professional levels.
 
