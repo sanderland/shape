@@ -62,7 +62,9 @@ class ControlPanel(SettingsTab):
         self.player_color.buttons()[0].setChecked(True)
 
         self.auto_play_checkbox = QCheckBox("Auto-play", checked=True)
+        self.auto_play_checkbox.setToolTip("When checked, the opponent will automatically play its move.")
         self.ai_move_button = QPushButton("Force Move (Ctrl+Enter)")
+        self.ai_move_button.setToolTip("Request an immediate move from the opponent, even if it's your turn.")
         self.ai_move_button.setShortcut("Ctrl+Enter")
         layout.addWidget(QLabel("Opponent:"), 1, 0)
         layout.addWidget(self.ai_move_button, 1, 1)
@@ -81,12 +83,14 @@ class ControlPanel(SettingsTab):
         self.rank_dropdowns = {}
         layout.addWidget(QLabel("Current Rank:"), 0, 0)
         self.rank_dropdowns["current"] = QComboBox()
+        self.rank_dropdowns["current"].setToolTip("Your current Go skill level. This is used to determine which mistakes are typical for you.")
         self.populate_rank_combo(self.rank_dropdowns["current"], "3k")
         layout.addWidget(self.rank_dropdowns["current"], 0, 1)
 
         # Target Rank
         layout.addWidget(QLabel("Target Rank:"), 0, 2)
         self.rank_dropdowns["target"] = QComboBox()
+        self.rank_dropdowns["target"].setToolTip("The skill level you want to aim for. Mistakes common at this level won't be flagged.")
         self.populate_rank_combo(self.rank_dropdowns["target"], "2d")
         layout.addWidget(self.rank_dropdowns["target"], 0, 3)
 
@@ -94,7 +98,7 @@ class ControlPanel(SettingsTab):
         layout.addWidget(QLabel("Opponent:"), 1, 0)
         self.opponent_type_combo = QComboBox()
         self.opponent_type_combo.addItems(["Rank", "Pre-AZ", "Pro"])
-
+        self.opponent_type_combo.setToolTip("Select the type of AI opponent.")
         layout.addWidget(self.opponent_type_combo, 1, 1)
 
         self.opponent_pro_combo = QComboBox()
@@ -110,7 +114,9 @@ class ControlPanel(SettingsTab):
         layout.addWidget(self.opponent_rank_preaz_combo, 1, 2, 1, 2)
 
         # Heatmap settings
-        layout.addWidget(QLabel("Heatmap:"), 3, 0)
+        heatmap_label = QLabel("Heatmap:")
+        heatmap_label.setToolTip("Visualize the AI's preferred moves for different player models.")
+        layout.addWidget(heatmap_label, 3, 0)
         heatmap_layout = QHBoxLayout()
         heatmap_layout.setSpacing(2)  # Reduce spacing between heatmap buttons
 

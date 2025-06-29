@@ -251,15 +251,53 @@ class GameLogic:
             self.current_node = self.current_node.parent
 
     def redo_move(self, n: int = 1):
-        while (n := n - 1) >= 0 and self.current_node.children:
+        for _ in range(n):
+            if not self.current_node.children:
+                break
             self.current_node = self.current_node.children[0]
 
     def get_score_history(self) -> list[tuple[int, float]]:
-        nodes = self.current_node.nodes_from_root
-        return [(node.depth, ai_analysis.ai_score()) for node in nodes if (ai_analysis := node.get_analysis(None))]
+        history = []
+        
+        # Collect all nodes from root to current position
+        nodes_path = []
+        node = self.current_node
+        while node:
+            nodes_path.append(node)
+            if not node.parent:
+                break
+            node = node.parent
+        
+        # Reverse to get root-to-current order
+        nodes_path.reverse()
+        
+        # Extract scores from nodes that have analysis
+        for move_number, node in enumerate(nodes_path):
+            assert isinstance(node, GameNode)
+            analysis = node.get_analysis(None)
+            
+            if analysis:
+                score = analysis.ai_score()
+                if score is not None:
+                    history.append((move_number, score))
+                    logger.debug(f"Move {move_number}: score = {score}")
+        
+        logger.debug(f"Score history: found {len(history)} data points from {len(nodes_path)} nodes")
+        
+        # If no history, try to get at least the current position
+        if not history:
+            current_analysis = self.current_node.get_analysis(None)
+            if current_analysis and current_analysis.ai_score() is not None:
+                history = [(0, current_analysis.ai_score())]
+                logger.debug(f"Using current position score: {current_analysis.ai_score()}")
+            else:
+                logger.debug("No analysis data available, returning default")
+                history = [(0, 0.0)]
+        
+        return history
 
     def export_sgf(self, player_names):
-        return self.current_node.root.sgf()
+        return self.current_node.root.sgf(player_names=player_names)
 
     def import_sgf(self, sgf_data: str):
         self.current_node = ShapeSGF.parse(sgf_data)

@@ -24,7 +24,7 @@ def interpolate_color(color1, color2, ratio):
 
 
 class BoardView(QWidget):
-    WOOD_COLOR = QColor(220, 179, 92)
+    WOOD_COLOR = QColor(210, 180, 140)  # Tan color for the board
     PLAYER_POLICY_COLOR = QColor(20, 200, 20)
     TARGET_POLICY_COLOR = QColor(0, 100, 0)
     AI_POLICY_COLOR = QColor(0, 0, 139)
@@ -36,37 +36,23 @@ class BoardView(QWidget):
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
         self.main_window = main_window
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.setMinimumSize(400, 400)
+
+    def heightForWidth(self, width):
+        return width
+
+    def hasHeightForWidth(self):
+        return True
 
     def calculate_dimensions(self, board_size):
         self.board_size = board_size
-        cell_size_h = self.width() / (board_size + 0.5)  # n-1 grid, 1 l 0.5 r
-        cell_size_v = self.height() / (board_size + 1.05)  # n-1 grid, 0.5 coord 0.5 btn
-        self.cell_size = min(cell_size_h, cell_size_v)
-        self.margin_left = self.cell_size
-        self.margin_top = self.cell_size * 0.5
-        self.margin_bottom = self.cell_size
+        # The container is square, so we can use either width or height
+        size = min(self.width(), self.height())
+        self.cell_size = size / (board_size + 1)
+        self.margin_left = (self.width() - (board_size - 1) * self.cell_size) / 2
+        self.margin_top = (self.height() - (board_size - 1) * self.cell_size) / 2
         self.stone_size = self.cell_size * 0.95
-        self.nav_buttons = [
-            ("⏮", lambda: self.main_window.on_prev_move(1000), 1.3),
-            ("⏪", lambda: self.main_window.on_prev_move(5), 1.3),
-            ("◀", lambda: self.main_window.on_prev_move(), 0.9),
-            ("pass", lambda: self.main_window.on_pass_move(), 1.0),
-            ("▶", lambda: self.main_window.on_next_move(), 0.9),
-            ("⏩", lambda: self.main_window.on_next_move(5), 1.3),
-            ("⏭", lambda: self.main_window.on_next_move(1000), 1.3),
-        ]
-        button_width = self.width() / (2 * len(self.nav_buttons))
-        self.nav_rects = [
-            QRectF(
-                self.width() * 0.25 + i * button_width,
-                (board_size + 0.275) * self.cell_size,
-                button_width,
-                self.margin_bottom,
-            )
-            for i in range(len(self.nav_buttons))
-        ]
         self.coord_font_size = max(int(self.cell_size / 3), 8)
 
     def intersection_coords(self, col, row) -> QPointF:
@@ -79,11 +65,11 @@ class BoardView(QWidget):
         self.calculate_dimensions(self.main_window.game_logic.square_board_size)
 
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
         self.draw_board(painter)
-        self.draw_coordinates_and_nav(painter)
+        self.draw_coordinates(painter)
         self.draw_star_points(painter)
 
         heatmap_settings = self.main_window.control_panel.get_heatmap_settings()
@@ -94,12 +80,23 @@ class BoardView(QWidget):
         self.draw_game_status(painter)
 
     def draw_board(self, painter):
+        painter.fillRect(self.rect(), self.WOOD_COLOR)
+        # Add a subtle wood grain texture
+        for i in range(100):
+            painter.setPen(
+                QPen(QColor(0, 0, 0, np.random.randint(5, 15)), np.random.uniform(0.5, 1.5), Qt.PenStyle.SolidLine)
+            )
+            x1 = np.random.uniform(0, self.width())
+            y1 = np.random.uniform(0, self.height())
+            x2 = x1 + np.random.uniform(-100, 100)
+            y2 = y1 + np.random.uniform(-10, 10)
+            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+
         if self.main_window.game_logic.current_node.autoplay_halted_reason:
-            color = QColor(self.WOOD_COLOR.red() + 20, self.WOOD_COLOR.green() - 40, self.WOOD_COLOR.blue() - 20)
-        else:
-            color = self.WOOD_COLOR
-        painter.fillRect(self.rect(), color)
-        painter.setPen(QPen(QColor(0, 0, 0, 180), 1))
+            overlay_color = QColor(255, 0, 0, 30)  # Semi-transparent red overlay
+            painter.fillRect(self.rect(), overlay_color)
+
+        painter.setPen(QPen(QColor(0, 0, 0, 100), 1))  # Softer grid lines
         for i in range(self.board_size):
             painter.drawLine(self.intersection_coords(0, i), self.intersection_coords(self.board_size - 1, i))
             painter.drawLine(self.intersection_coords(i, 0), self.intersection_coords(i, self.board_size - 1))
@@ -108,7 +105,7 @@ class BoardView(QWidget):
         painter.drawRect(QRectF(self.margin_left, self.margin_top, grid_size, grid_size))
 
     def draw_star_points(self, painter):
-        painter.setBrush(QBrush(Qt.black))
+        painter.setBrush(QBrush(Qt.GlobalColor.black))
         for col, row in self.get_star_points():
             painter.drawEllipse(self.intersection_coords(col, row), 3, 3)
 
@@ -124,56 +121,50 @@ class BoardView(QWidget):
             center = self.intersection_coords(*last_move.coords)
             outline_color = QColor(240, 240, 240, 180) if last_move.player == "B" else QColor(50, 50, 50, 180)
             painter.setPen(QPen(outline_color, 2))
-            painter.setBrush(Qt.NoBrush)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(center, self.stone_size / 4, self.stone_size / 4)
 
     def draw_stone(self, painter, row, col, color):
         center = self.intersection_coords(col, row)
 
-        gradient = QRadialGradient(center.x() - self.stone_size / 4, center.y() - self.stone_size / 4, self.stone_size)
+        gradient = QRadialGradient(center.x() - self.stone_size / 3, center.y() - self.stone_size / 3, self.stone_size)
         if color == "B":
-            gradient.setColorAt(0, QColor(80, 80, 80))
-            gradient.setColorAt(0.5, Qt.black)
-            gradient.setColorAt(1, QColor(10, 10, 10))
+            gradient.setColorAt(0, QColor(100, 100, 100))
+            gradient.setColorAt(0.5, QColor(20, 20, 20))
+            gradient.setColorAt(1, Qt.GlobalColor.black)
         else:
-            gradient.setColorAt(0, QColor(230, 230, 230))
-            gradient.setColorAt(0.5, Qt.white)
+            gradient.setColorAt(0, Qt.GlobalColor.white)
+            gradient.setColorAt(0.5, QColor(235, 235, 235))
             gradient.setColorAt(1, QColor(200, 200, 200))
 
         painter.setBrush(QBrush(gradient))
-        painter.setPen(Qt.NoPen)
+        painter.setPen(QPen(QColor(50, 50, 50, 100), 0.5))  # Softer stone outline
         painter.drawEllipse(center, self.stone_size / 2, self.stone_size / 2)
 
-    def draw_coordinates_and_nav(self, painter):
-        font = QFont("Arial", self.coord_font_size, QFont.Bold)
+    def draw_coordinates(self, painter):
+        font = QFont("Arial", self.coord_font_size, QFont.Weight.Bold)
         painter.setFont(font)
         painter.setPen(QColor(0, 0, 0))
         for i in range(self.board_size):
             bottom_box = self.intersection_coords(i - 0.5, -0.5)
             painter.drawText(
                 QRectF(bottom_box.x(), bottom_box.y(), self.cell_size, self.cell_size * 0.5),
-                Qt.AlignHCenter | Qt.AlignTop,
+                Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
                 Move.GTP_COORD[i],
             )
             left_box = self.intersection_coords(-1, i + 0.5)
             painter.drawText(
                 QRectF(left_box.x(), left_box.y(), self.cell_size * 0.5, self.cell_size),
-                Qt.AlignVCenter | Qt.AlignRight,
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                 str(i + 1),
             )
-        for (text, _, size_adj), nav_rect in zip(self.nav_buttons, self.nav_rects, strict=False):
-            painter.setFont(QFont("Arial", self.coord_font_size * size_adj, QFont.Bold))
-            painter.drawText(nav_rect, Qt.AlignCenter, text)
 
     def mousePressEvent(self, event):
-        for (_, callback, _), rect in zip(self.nav_buttons, self.nav_rects, strict=False):
-            if rect.contains(event.pos()):
-                callback()
-                return
-        col = round((event.x() - self.margin_left) / self.cell_size)
-        row = round((event.y() - self.margin_top) / self.cell_size)
+        col = round((event.pos().x() - self.margin_left) / self.cell_size)
+        row = round((event.pos().y() - self.margin_top) / self.cell_size)
+        row = self.board_size - row - 1
         if 0 <= col < self.board_size and 0 <= row < self.board_size:
-            self.main_window.make_move((col, self.board_size - row - 1))
+            self.main_window.make_move((col, row))
 
     def get_star_points(self):
         star_points = {
@@ -217,7 +208,7 @@ class BoardView(QWidget):
             rank_gradient = np.tile(np.linspace(0, 2, self.board_size), (self.board_size, 1)).T
             heatmap_mean_prob = np.append(prob_gradient.ravel(), 0)
             heatmap_mean_rank = np.append(rank_gradient.ravel(), 0)
-            sampling_settings = {"min_p": 0}
+            sampling_settings["min_p"] = 0.0
 
         if heatmap_mean_prob is not None:
             top_moves, _ = PolicyData(heatmap_mean_prob).sample(
@@ -238,7 +229,7 @@ class BoardView(QWidget):
             text = "" if rel_prob < 0.01 else f"{prob * 100:.0f}"
 
             painter.setBrush(QBrush(color))
-            painter.setPen(QPen(Qt.black))
+            painter.setPen(QPen(Qt.GlobalColor.black))
             square_size = self.cell_size * size
             painter.drawRect(QRectF(x - square_size / 2, y - square_size / 2, square_size, square_size))
 
@@ -249,7 +240,7 @@ class BoardView(QWidget):
                 painter.setPen(QColor(200, 200, 200))
                 painter.drawText(
                     QRectF(x - self.cell_size / 2, y - self.cell_size / 2, self.cell_size, self.cell_size),
-                    Qt.AlignCenter,
+                    Qt.AlignmentFlag.AlignCenter,
                     text,
                 )
 
@@ -277,20 +268,16 @@ class BoardView(QWidget):
             painter.setFont(font)
             painter.setPen(QColor(0, 0, 0))
             text_rect = QRectF(0, 0, self.width(), self.margin_top)
-            painter.drawText(text_rect, Qt.AlignCenter, message)
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, message)
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Left:
-            if event.modifiers() & Qt.ShiftModifier:
-                self.main_window.on_prev_move(5)
-            else:
-                self.main_window.on_prev_move()
-        elif event.key() == Qt.Key_Right:
-            if event.modifiers() & Qt.ShiftModifier:
-                self.main_window.on_next_move(5)
-            else:
-                self.main_window.on_next_move()
-        elif event.key() == Qt.Key_Space:
+        if self.main_window.game_logic.game_ended():
+            return
+        if event.key() == Qt.Key.Key_Left:
+            self.main_window.on_prev_move()
+        elif event.key() == Qt.Key.Key_Right:
+            self.main_window.on_next_move()
+        elif event.key() == Qt.Key.Key_P:
             self.main_window.on_pass_move()
         else:
             super().keyPressEvent(event)

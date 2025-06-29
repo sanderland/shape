@@ -1,7 +1,7 @@
 import logging
 
 import numpy as np
-from PySide6.QtCore import QEvent, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal, QSize
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMenuBar,
+    QPushButton,
+    QStyle,
     QStatusBar,
     QTabWidget,
     QVBoxLayout,
@@ -37,7 +39,7 @@ class MainWindow(QMainWindow):
         self.katago_engine = None
         self.game_logic = GameLogic()
         self.setWindowTitle("SHAPE - Play Go with AI Feedback")
-        self.setFocusPolicy(Qt.StrongFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setup_ui()
         self.connect_signals()
 
@@ -69,6 +71,12 @@ class MainWindow(QMainWindow):
         self.control_panel.settings_updated.connect(self.update_state)
         self.update_state_main_thread.connect(self.update_state)
 
+        # Connect new buttons
+        self.pass_button.clicked.connect(self.on_pass_move)
+        self.undo_button.clicked.connect(lambda: self.on_prev_move())
+        self.redo_button.clicked.connect(lambda: self.on_next_move())
+        self.ai_move_button.clicked.connect(self.request_ai_move)
+
     def update_state(self):
         self.update_state_timer.start(100)  # 100ms debounce
 
@@ -91,6 +99,10 @@ class MainWindow(QMainWindow):
         for tab in [self.control_panel, self.analysis_panel, self.config_panel]:
             tab.update_ui()
         self.board_view.update()
+
+        # Update button states
+        self.undo_button.setEnabled(self.game_logic.current_node.parent is not None)
+        self.redo_button.setEnabled(len(self.game_logic.current_node.children) > 0)
 
     def maybe_make_ai_move(self, current_node, human_profiles, current_analysis, next_player_human):
         if (
@@ -246,23 +258,50 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
         main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(5, 5, 5, 5)
+        main_layout.setSpacing(5)
 
+        # Left panel with board and buttons
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(5)
+        
+        # Board view with square aspect ratio
         self.board_view = BoardView(self)
-        self.board_view.setFocusPolicy(Qt.StrongFocus)
-        self.board_view.installEventFilter(self)
-        main_layout.addWidget(self.board_view, 5)
+        left_layout.addWidget(self.board_view, stretch=1)
 
-        # Create a container for the right panel with proper margins
-        right_panel_container = QWidget()
-        right_panel_layout = QVBoxLayout(right_panel_container)
-        right_panel_layout.setContentsMargins(0, 12, 0, 0)
-        right_panel_layout.addWidget(self.create_right_panel_tabs())
+        # Add control buttons below the board with fixed height
+        button_widget = QWidget()
+        button_widget.setFixedHeight(50)  # Fixed height for buttons
+        button_layout = QHBoxLayout(button_widget)
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.pass_button = QPushButton("Pass")
+        self.pass_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton))
+        self.undo_button = QPushButton("Undo")
+        self.undo_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowBack))
+        self.redo_button = QPushButton("Redo")
+        self.redo_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowForward))
+        self.ai_move_button = QPushButton("AI Move")
+        self.ai_move_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
 
-        main_layout.addWidget(right_panel_container, 3)
+        button_layout.addWidget(self.pass_button)
+        button_layout.addWidget(self.undo_button)
+        button_layout.addWidget(self.redo_button)
+        button_layout.addWidget(self.ai_move_button)
+        left_layout.addWidget(button_widget)
 
-        self.setMinimumSize(1200, 800)
+        main_layout.addWidget(left_panel, stretch=1)
+
+        # Right panel with fixed width
+        right_panel = self.create_right_panel_tabs()
+        right_panel.setFixedWidth(400)  # Fixed width for right panel
+        main_layout.addWidget(right_panel)
+
+        # Set window constraints for proper aspect ratio
+        self.setMinimumSize(1000, 700)
+        self.resize(1200, 800)
 
     def create_right_panel_tabs(self):
         tab_widget = QTabWidget()
@@ -271,19 +310,19 @@ class MainWindow(QMainWindow):
         play_tab = QWidget()
         self.control_panel = ControlPanel(self)
         play_tab.setLayout(self.control_panel)
-        tab_widget.addTab(play_tab, "Play")
+        tab_widget.addTab(play_tab, self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay), "Play")
 
         # AI Analysis tab
         ai_analysis_tab = QWidget()
         self.analysis_panel = AnalysisPanel(self)
         ai_analysis_tab.setLayout(self.analysis_panel)
-        tab_widget.addTab(ai_analysis_tab, "AI Analysis")
+        tab_widget.addTab(ai_analysis_tab, self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon), "AI Analysis")
 
         # Settings tab
         settings_tab = QWidget()
         self.config_panel = ConfigPanel(self)
         settings_tab.setLayout(self.config_panel)
-        tab_widget.addTab(settings_tab, "Settings")
+        tab_widget.addTab(settings_tab, self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView), "Settings")
         return tab_widget
 
     def create_status_bar(self):
@@ -337,11 +376,33 @@ class MainWindow(QMainWindow):
     def on_pass_move(self):
         self.make_move(None)
 
+    def resizeEvent(self, event):
+        """Constrain window resizing to maintain proper aspect ratio"""
+        super().resizeEvent(event)
+        
+        # Get the new size
+        new_size = event.size()
+        width = new_size.width()
+        height = new_size.height()
+        
+        # Calculate the board area (total width minus right panel)
+        board_area_width = width - 400  # Right panel fixed width
+        
+        # The board should be square, so calculate required height
+        # Board height + buttons (50) + margins and menu/status bar (~100)
+        required_height = board_area_width + 150
+        
+        # If the height is too different from required, adjust it
+        if abs(height - required_height) > 50:  # Allow some tolerance
+            self.resize(width, required_height)
+
     def eventFilter(self, obj, event):
-        if obj == self.board_view and event.type() == QEvent.Wheel:
-            if event.angleDelta().y() > 0:
-                self.on_prev_move()
-            elif event.angleDelta().y() < 0:
-                self.on_next_move()
-            return True
+        if event.type() == QEvent.Type.Wheel:
+            if self.board_view.underMouse():
+                delta = event.angleDelta().y()
+                if delta > 0:
+                    self.on_prev_move()
+                elif delta < 0:
+                    self.on_next_move()
+                return True
         return super().eventFilter(obj, event)
