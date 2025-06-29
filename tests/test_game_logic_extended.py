@@ -73,4 +73,4 @@ def test_sgf_import_export():
     sgf_data_pass = game.export_sgf(player_names={"B": "Human", "W": "AI"})
     assert "B[]" in sgf_data_pass or "B[tt]" in sgf_data_pass
     assert new_game.import_sgf(sgf_data_pass)
-    assert new_game.current_node.is_pass 
+    assert new_game.current_node.is_pass

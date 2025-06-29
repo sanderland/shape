@@ -83,14 +83,18 @@ class ControlPanel(SettingsTab):
         self.rank_dropdowns = {}
         layout.addWidget(QLabel("Current Rank:"), 0, 0)
         self.rank_dropdowns["current"] = QComboBox()
-        self.rank_dropdowns["current"].setToolTip("Your current Go skill level. This is used to determine which mistakes are typical for you.")
+        self.rank_dropdowns["current"].setToolTip(
+            "Your current Go skill level. This is used to determine which mistakes are typical for you."
+        )
         self.populate_rank_combo(self.rank_dropdowns["current"], "3k")
         layout.addWidget(self.rank_dropdowns["current"], 0, 1)
 
         # Target Rank
         layout.addWidget(QLabel("Target Rank:"), 0, 2)
         self.rank_dropdowns["target"] = QComboBox()
-        self.rank_dropdowns["target"].setToolTip("The skill level you want to aim for. Mistakes common at this level won't be flagged.")
+        self.rank_dropdowns["target"].setToolTip(
+            "The skill level you want to aim for. Mistakes common at this level won't be flagged."
+        )
         self.populate_rank_combo(self.rank_dropdowns["target"], "2d")
         layout.addWidget(self.rank_dropdowns["target"], 0, 3)
 

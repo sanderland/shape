@@ -266,7 +266,7 @@ class MainWindow(QMainWindow):
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(5)
-        
+
         # Board view with square aspect ratio
         self.board_view = BoardView(self)
         left_layout.addWidget(self.board_view, stretch=1)
@@ -276,7 +276,7 @@ class MainWindow(QMainWindow):
         button_widget.setFixedHeight(50)  # Fixed height for buttons
         button_layout = QHBoxLayout(button_widget)
         button_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         self.pass_button = QPushButton("Pass")
         self.pass_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton))
         self.undo_button = QPushButton("Undo")
@@ -316,13 +316,17 @@ class MainWindow(QMainWindow):
         ai_analysis_tab = QWidget()
         self.analysis_panel = AnalysisPanel(self)
         ai_analysis_tab.setLayout(self.analysis_panel)
-        tab_widget.addTab(ai_analysis_tab, self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon), "AI Analysis")
+        tab_widget.addTab(
+            ai_analysis_tab, self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon), "AI Analysis"
+        )
 
         # Settings tab
         settings_tab = QWidget()
         self.config_panel = ConfigPanel(self)
         settings_tab.setLayout(self.config_panel)
-        tab_widget.addTab(settings_tab, self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView), "Settings")
+        tab_widget.addTab(
+            settings_tab, self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView), "Settings"
+        )
         return tab_widget
 
     def create_status_bar(self):
@@ -379,19 +383,19 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         """Constrain window resizing to maintain proper aspect ratio"""
         super().resizeEvent(event)
-        
+
         # Get the new size
         new_size = event.size()
         width = new_size.width()
         height = new_size.height()
-        
+
         # Calculate the board area (total width minus right panel)
         board_area_width = width - 400  # Right panel fixed width
-        
+
         # The board should be square, so calculate required height
         # Board height + buttons (50) + margins and menu/status bar (~100)
         required_height = board_area_width + 150
-        
+
         # If the height is too different from required, adjust it
         if abs(height - required_height) > 50:  # Allow some tolerance
             self.resize(width, required_height)

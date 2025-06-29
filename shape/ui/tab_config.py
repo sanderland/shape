@@ -14,7 +14,7 @@ class ConfigPanel(SettingsTab):
         # --- Policy Sampling Group ---
         policy_group = QGroupBox("Policy Sampling")
         policy_layout = QFormLayout(policy_group)
-        
+
         policy_explanation = QLabel(
             "Controls how the AI opponent samples moves to simulate a human player. This does not affect the main analysis engine."
         )
@@ -30,9 +30,11 @@ class ConfigPanel(SettingsTab):
         policy_layout.addRow("Top P:", self.top_p)
 
         self.min_p = create_double_spin_box(0.0, 1.0, 0.05, 0.01)
-        self.min_p.setToolTip("Consider only moves with a probability of at least P times the probability of the best move.")
+        self.min_p.setToolTip(
+            "Consider only moves with a probability of at least P times the probability of the best move."
+        )
         policy_layout.addRow("Min P:", self.min_p)
-        
+
         self.addWidget(policy_group)
 
         # --- Analysis Settings Group ---
@@ -48,7 +50,7 @@ class ConfigPanel(SettingsTab):
         self.visits = create_spin_box(8, 1024, 24)
         self.visits.setToolTip("The number of playouts the AI will perform. Higher values are stronger but slower.")
         analysis_layout.addRow("Visits:", self.visits)
-        
+
         self.addWidget(analysis_group)
 
         # --- Mistake Feedback Group ---
@@ -76,7 +78,7 @@ class ConfigPanel(SettingsTab):
 
         # Probabilities
         v_layout_probs = QVBoxLayout()
-        v_layout_probs.setContentsMargins(20, 0, 0, 0) # Indent the whole block
+        v_layout_probs.setContentsMargins(20, 0, 0, 0)  # Indent the whole block
 
         # Target rank
         h_layout_target = QHBoxLayout()
@@ -105,7 +107,7 @@ class ConfigPanel(SettingsTab):
         v_layout.addLayout(v_layout_probs)
 
         self.addWidget(mistake_group)
-        
+
         self.addStretch(1)
 
     def connect_signals(self):
