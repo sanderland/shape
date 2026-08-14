@@ -72,12 +72,16 @@ jobs:
           SHAPE_MODEL_DIR: ${{ github.workspace }}/models
           SHAPE_ONNX_OUT: ${{ github.workspace }}/out/b18c384nbt-humanv0.onnx
           SHAPE_ASSETS_OUT: ${{ github.workspace }}/out
+          SHAPE_FIXTURES_OUT: ${{ github.workspace }}/out
         run: |
           mkdir -p out
           cd tools/onnx_export
           # --no-katago: no engine binary here, so gate onnx against torch instead.
           python export_onnx.py --no-katago
           python export_assets.py
+          # Featurizer fixtures, so the Dart port is checked against a model+featurizer
+          # pair generated together rather than whatever is committed.
+          python export_fixtures.py
 
       - name: Show outputs
         run: ls -la out

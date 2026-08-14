@@ -1,57 +1,32 @@
-// SHAPE mobile slice: run the KataGo human-SL net on device for one fixed position.
+// SHAPE mobile: play Go against a human-like KataGo opponent at a chosen rank,
+// and see how each move looks to your rank versus the rank you're aiming at.
 //
-// bin_input/global_input are precomputed on desktop and shipped as an asset, so the
-// only thing under test here is on-device inference plus the Dart meta encoding.
-// Switching rank rebuilds input_meta in Dart and re-runs the net, and the result is
-// checked against the desktop reference so we prove correctness, not just execution.
-
-import 'dart:convert';
-import 'dart:typed_data';
+// Everything runs on device: the featurizer is a port of KataGo's board.py +
+// features.py (pinned by test/featurizer_test.dart) feeding the human-SL net
+// through ONNX Runtime.
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 
 import 'board_painter.dart';
-import 'sgf_metadata.dart';
+import 'engine/analysis.dart';
+import 'game/shape_game.dart';
 
-// Swap to the .int8 asset for a ~4x smaller model; expect ~2e-2 policy error
-// instead of ~1e-7, so the tolerance below is graded rather than pass/fail.
 const kModelAsset = 'assets/b18c384nbt-humanv0.onnx';
-const kExactTol = 1e-3; // fp32: should match desktop to float rounding
-const kQuantTol = 5e-2; // int8: weights-only quantization error
-const kPositionAsset = 'assets/position.bin';
-const kReferenceAsset = 'assets/reference.json';
 
-const kBinLen = 22 * kBoardSize * kBoardSize;
-const kGlobalLen = 19;
+void main() => runApp(const ShapeApp());
 
-/// Flattens ORT's nested output (List / Float32List / num) into a flat doubles list.
-List<double> _flatten(dynamic v) {
-  if (v is num) return [v.toDouble()];
-  if (v is Float32List) return List<double>.from(v);
-  if (v is List) return v.expand(_flatten).toList();
-  throw ArgumentError('unexpected ORT output element: ${v.runtimeType}');
-}
-
-String _verdict(double d) => d < kExactTol
-    ? 'MATCH'
-    : d < kQuantTol
-        ? 'CLOSE (quantized)'
-        : 'MISMATCH';
-
-void main() => runApp(const ShapeSliceApp());
-
-class ShapeSliceApp extends StatelessWidget {
-  const ShapeSliceApp({super.key});
+class ShapeApp extends StatelessWidget {
+  const ShapeApp({super.key});
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'SHAPE slice',
+        title: 'SHAPE',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(colorSchemeSeed: const Color(0xFF0B6E2E)),
+        theme: ThemeData(colorSchemeSeed: const Color(0xFF0B6E2E), useMaterial3: true),
         home: const HomePage(),
       );
 }
+
+enum Overlay { none, yourRank, targetRank }
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -60,23 +35,10 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  OrtSession? _session;
-  Float32List? _bin;
-  Float32List? _global;
-  Map<String, dynamic>? _ref;
-  List<List<String>> _board =
-      List.generate(kBoardSize, (_) => List.filled(kBoardSize, '.'));
-  int _nextPlayer = kWhite;
-
-  List<String> _profiles = [];
-  String? _profile;
-  List<double>? _policy;
-  double? _lead;
-  int _inferMs = 0;
-  int _loadMs = 0;
-  double? _maxDiff;
-  String _status = 'loading…';
-  Object? _error;
+  ShapeGame? game;
+  Object? loadError;
+  String status = 'loading model…';
+  Overlay overlay = Overlay.targetRank;
 
   @override
   void initState() {
@@ -86,183 +48,272 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _load() async {
     try {
-      final sw = Stopwatch()..start();
-
-      final posBytes = await rootBundle.load(kPositionAsset);
-      final all = posBytes.buffer
-          .asFloat32List(posBytes.offsetInBytes, kBinLen + kGlobalLen);
-      _bin = Float32List.fromList(all.sublist(0, kBinLen));
-      _global = Float32List.fromList(all.sublist(kBinLen));
-
-      _ref = jsonDecode(await rootBundle.loadString(kReferenceAsset));
-      _board = (_ref!['board'] as List)
-          .map<List<String>>((r) => (r as List).map((e) => e as String).toList())
-          .toList();
-      _nextPlayer = _ref!['nextPlayer'] == 'W' ? kWhite : kBlack;
-      _profiles = (_ref!['profiles'] as Map).keys.cast<String>().toList();
-
-      setState(() => _status = 'loading model (107 MB)…');
-      _session = await OnnxRuntime().createSessionFromAsset(kModelAsset);
-      _loadMs = sw.elapsedMilliseconds;
-
-      _profile = _profiles.firstWhere((p) => p == 'rank_5k',
-          orElse: () => _profiles.first);
-      await _run();
+      final engine = await ShapeEngine.load(kModelAsset);
+      final g = ShapeGame(engine, boardSize: 19);
+      g.addListener(() => setState(() {}));
+      setState(() {
+        game = g;
+        status = 'analyzing…';
+      });
+      await g.start();
+      setState(() => status = 'ready');
     } catch (e, st) {
       debugPrint('$e\n$st');
-      setState(() {
-        _error = e;
-        _status = 'failed';
-      });
+      setState(() => loadError = e);
     }
   }
 
-  Future<void> _run() async {
-    final session = _session;
-    final profile = _profile;
-    if (session == null || profile == null) return;
-    setState(() => _status = 'running $profile…');
-
-    final meta =
-        getProfile(profile).getMetadataRow(_nextPlayer, kBoardSize * kBoardSize);
-
-    final inputs = {
-      'bin_input': await OrtValue.fromList(
-          _bin!, [1, 22, kBoardSize, kBoardSize]),
-      'global_input': await OrtValue.fromList(_global!, [1, kGlobalLen]),
-      'input_meta': await OrtValue.fromList(meta, [1, kMetadataChannels]),
-    };
-
-    final sw = Stopwatch()..start();
-    final outputs = await session.run(inputs);
-    final ms = sw.elapsedMilliseconds;
-
-    // asList() hands back the tensor's nested shape (e.g. [1,362] -> a List
-    // holding one Float32List row), so flatten rather than cast element-wise.
-    final policy = _flatten(await outputs['policy']!.asList());
-    final lead = _flatten(await outputs['lead']!.asList()).first;
-
-    for (final v in inputs.values) {
-      v.dispose();
-    }
-
-    // Compare against the desktop reference: same position, same profile.
-    final refTop = (_ref!['profiles'][profile]['top'] as List);
-    var maxDiff = 0.0;
-    for (final e in refTop) {
-      final d = (policy[e['idx'] as int] - (e['p'] as num).toDouble()).abs();
-      if (d > maxDiff) maxDiff = d;
-    }
-
-    setState(() {
-      _policy = policy;
-      _lead = lead;
-      _inferMs = ms;
-      _maxDiff = maxDiff;
-      _status = 'ok';
-    });
+  PolicyData? get _overlayPolicy {
+    final g = game;
+    if (g == null || overlay == Overlay.none) return null;
+    final profile = overlay == Overlay.yourRank ? g.playerRank : g.targetRank;
+    return g.analysisFor(profile)?.policy;
   }
 
   @override
   Widget build(BuildContext context) {
-    final best = _policy == null
-        ? null
-        : List<int>.generate(kBoardSize * kBoardSize, (i) => i)
-            .reduce((a, b) => _policy![a] >= _policy![b] ? a : b);
+    if (loadError != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('SHAPE')),
+        body: Padding(
+          padding: const EdgeInsets.all(16),
+          child: SingleChildScrollView(
+            child: Text('$loadError', style: const TextStyle(color: Colors.red, fontSize: 12)),
+          ),
+        ),
+      );
+    }
+    final g = game;
+    if (g == null) {
+      return Scaffold(
+        body: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(status),
+          ]),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SHAPE · human-SL on device'),
+        title: const Text('SHAPE'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            tooltip: 'Undo',
+            onPressed: g.canUndo && !g.busy ? g.undo : null,
+            icon: const Icon(Icons.undo),
+          ),
+          IconButton(
+            tooltip: 'New game',
+            onPressed: g.busy ? null : () => g.newGame(),
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
       ),
       body: SafeArea(
-        child: _error != null
-            ? Padding(
-                padding: const EdgeInsets.all(16),
-                child: SingleChildScrollView(
-                  child: Text('$_error',
-                      style: const TextStyle(color: Colors.red, fontSize: 12)),
-                ),
-              )
-            : Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: AspectRatio(
-                      aspectRatio: 1,
-                      child: CustomPaint(
-                        painter:
-                            BoardPainter(board: _board, policy: _policy),
-                        size: Size.infinite,
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    child: Row(
-                      children: [
-                        const Text('Rank  '),
-                        Expanded(
-                          child: DropdownButton<String>(
-                            isExpanded: true,
-                            value: _profile,
-                            items: _profiles
-                                .map((p) => DropdownMenuItem(
-                                    value: p, child: Text(p)))
-                                .toList(),
-                            onChanged: _session == null
-                                ? null
-                                : (v) {
-                                    setState(() => _profile = v);
-                                    _run();
-                                  },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                      child: DefaultTextStyle(
-                        style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 13,
-                            color: Colors.black87),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('status      $_status'),
-                            Text('model load  $_loadMs ms'),
-                            Text('inference   $_inferMs ms'),
-                            if (best != null)
-                              Text('top move    ${idxToGtp(best)}'
-                                  '  ${(_policy![best] * 100).toStringAsFixed(1)}%'),
-                            if (_lead != null)
-                              Text('scoreLead   ${_lead!.toStringAsFixed(2)}'),
-                            if (_maxDiff != null) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                'vs desktop  ${_maxDiff!.toStringAsExponential(2)}'
-                                '  ${_verdict(_maxDiff!)}',
-                                style: TextStyle(
-                                  fontFamily: 'monospace',
-                                  fontWeight: FontWeight.bold,
-                                  color: _maxDiff! < kQuantTol
-                                      ? const Color(0xFF0B6E2E)
-                                      : Colors.red,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+        child: Column(
+          children: [
+            _board(g),
+            if (g.busy) const LinearProgressIndicator(minHeight: 2),
+            Expanded(child: SingleChildScrollView(child: _panel(g))),
+          ],
+        ),
       ),
     );
   }
+
+  Widget _board(ShapeGame g) {
+    final last = g.pos.moves.isEmpty || g.pos.moves.last.isPass
+        ? null
+        : (g.pos.board.locX(g.pos.moves.last.loc), g.pos.board.locY(g.pos.moves.last.loc));
+    final fb = g.lastFeedback;
+    return Padding(
+      padding: const EdgeInsets.all(6),
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final geom = BoardGeometry(
+              Size(constraints.maxWidth, constraints.maxHeight),
+              g.boardSize,
+            );
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (d) {
+                if (g.busy || !g.humanToPlay || g.gameOver) return;
+                final p = geom.hit(d.localPosition);
+                if (p != null) g.playAt(p.$1, p.$2);
+              },
+              child: CustomPaint(
+                painter: BoardPainter(
+                  board: g.pos.board,
+                  heatmap: _overlayPolicy,
+                  lastMove: last,
+                  flaggedMove: (fb != null && fb.isMistake) ? (fb.x, fb.y) : null,
+                ),
+                size: Size.infinite,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _panel(ShapeGame g) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _feedbackCard(g),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: _rankPicker('Your rank', g.playerRank, (v) => g.setRanks(player: v))),
+            const SizedBox(width: 8),
+            Expanded(child: _rankPicker('Aiming at', g.targetRank, (v) => g.setRanks(target: v))),
+          ]),
+          const SizedBox(height: 4),
+          _rankPicker('Opponent', g.opponentRank, (v) => g.setRanks(opponent: v)),
+          const SizedBox(height: 8),
+          SegmentedButton<Overlay>(
+            segments: const [
+              ButtonSegment(value: Overlay.none, label: Text('No hints')),
+              ButtonSegment(value: Overlay.yourRank, label: Text('Your rank')),
+              ButtonSegment(value: Overlay.targetRank, label: Text('Target')),
+            ],
+            selected: {overlay},
+            onSelectionChanged: (s) => setState(() => overlay = s.first),
+          ),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: g.busy || g.gameOver ? null : g.pass,
+                icon: const Icon(Icons.skip_next),
+                label: const Text('Pass'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: g.canRedo && !g.busy ? g.redo : null,
+                icon: const Icon(Icons.redo),
+                label: const Text('Redo'),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          DefaultTextStyle(
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.black54),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('move ${g.moveCount}   '
+                  '${g.gameOver ? "game over" : (g.humanToPlay ? "your turn" : "opponent…")}   '
+                  '${g.analysisMs} ms'),
+              if (g.error != null)
+                Text(g.error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+            ]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _feedbackCard(ShapeGame g) {
+    final fb = g.lastFeedback;
+    if (fb == null) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(12),
+          child: Text('Play a move to see how it looks to each rank.'),
+        ),
+      );
+    }
+    final pointsLost = fb.pointsLost;
+    final good = fb.targetWouldPlay && !fb.isMistake;
+    final color = fb.isMistake
+        ? const Color(0xFFE53935)
+        : (good ? const Color(0xFF0B6E2E) : Colors.orange.shade800);
+    final headline = fb.isMistake
+        ? 'Lost ${pointsLost!.toStringAsFixed(1)} points'
+        : (good ? 'Good — a ${rankLabel(g.targetRank)} move' : 'Playable');
+
+    return Card(
+      color: color.withValues(alpha: 0.08),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(fb.isMistake ? Icons.warning_amber : Icons.check_circle_outline,
+                color: color, size: 20),
+            const SizedBox(width: 6),
+            Text('${coordLabel(fb.x, fb.y, g.boardSize)} · $headline',
+                style: TextStyle(fontWeight: FontWeight.w700, color: color)),
+          ]),
+          const SizedBox(height: 8),
+          _bar('${rankLabel(g.playerRank)} would play this', fb.playerProb, fb.playerRel),
+          _bar('${rankLabel(g.targetRank)} would play this', fb.targetProb, fb.targetRel),
+          const SizedBox(height: 4),
+          Text(
+            'Looks like ${rankLabel(g.targetRank)} rather than ${rankLabel(g.playerRank)}: '
+            '${(fb.moveLikeTarget * 100).toStringAsFixed(0)}%'
+            '${pointsLost == null ? "" : "   ·   ${pointsLost >= 0 ? "-" : "+"}${pointsLost.abs().toStringAsFixed(1)} pts"}',
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _bar(String label, double prob, double rel) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(children: [
+          SizedBox(
+            width: 190,
+            child: Text(label, style: const TextStyle(fontSize: 12)),
+          ),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: rel.clamp(0.0, 1.0),
+                minHeight: 8,
+                backgroundColor: Colors.black12,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 46,
+            child: Text('${(prob * 100).toStringAsFixed(1)}%',
+                textAlign: TextAlign.right,
+                style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+          ),
+        ]),
+      );
+
+  Widget _rankPicker(String label, String value, Future<void> Function(String) onChanged) =>
+      InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          isDense: true,
+          border: const OutlineInputBorder(),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            isExpanded: true,
+            value: value,
+            items: kRanks
+                .map((r) => DropdownMenuItem(value: r, child: Text(rankLabel(r))))
+                .toList(),
+            onChanged: (v) {
+              if (v != null) onChanged(v);
+            },
+          ),
+        ),
+      );
 }
