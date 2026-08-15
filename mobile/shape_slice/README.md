@@ -16,7 +16,8 @@ The model is not in the repo; `tools/onnx_export/` generates it (see below).
 
 ## What it does
 
-- **Play** on a 19×19 board. Tap to place, Pass, Undo, Redo, new game.
+- **Play** on a 19×19 board: tap to place, Pass, New game, and |< < > >| to browse
+  the game, stepping a whole exchange at a time.
 - **Opponent** replies by sampling the human-SL policy at its rank with SHAPE's
   top_k / top_p / min_p sampler — so it plays like a human of that strength, not
   like an engine.
@@ -51,19 +52,29 @@ flutter test
   to break a naive port: ladders, ko, captures, passes, 9×9/13×13/19×19. Exact
   equality; a single wrong plane yields a plausible-looking but wrong policy.
 - `test/sgf_metadata_test.dart` — all 192 metadata channels × 7 profiles.
+- `test/shape_game_test.dart` — the game loop against a fake `Analyzer`: branching
+  invalidates the analysis cache, browsing does no work, the opponent can pass.
+- `test/verdict_test.dart` — the move-labelling rule and its thresholds, against
+  desktop's `should_halt_on_mistake`.
+- `test/policy_data_test.dart` — the sampler's pass handling.
 
-Neither needs an emulator.
+None of them need an emulator or the model.
 
 ## Known limitations
 
 - **No AI reference.** Desktop SHAPE uses a second KataGo net with search for
   `scoreLead` and shows its raw policy as the "AI" heatmap. Only the human-SL net
-  ships here, so "points lost" comes from that net's own lead head at the target
-  rank. It is an approximation of desktop's mistake size, not the same number.
+  ships here, so "points lost" comes from that net's own lead head at the strongest
+  profile (`proyear_2023`). It is an approximation of desktop's mistake size, not the
+  same number.
 - **Territory scoring only.** Area scoring (Chinese) needs `calculateArea` /
   Benson's pass-alive, which is not ported. The featurizer throws rather than
   emitting zeroed area planes and silently producing a wrong policy.
 - **No superko**, matching the Python reference — simple ko only.
+- **The opponent passes by sampling.** Desktop passes when the *AI net's* best move
+  is a pass (`main_window.py:116`); with no AI net here, pass is instead left in the
+  opponent's sampling pool, so it only becomes likely once the policy says so. Under
+  the default `min_p` it is effectively unreachable until the endgame.
 - **19×19 only** in the UI, though the engine and fixtures cover 9×9 and 13×13.
 - Emulator timings are meaningless (no NPU, CPU execution provider).
 

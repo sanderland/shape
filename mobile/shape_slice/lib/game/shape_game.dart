@@ -85,7 +85,7 @@ class MoveFeedback {
 }
 
 class ShapeGame extends ChangeNotifier {
-  final ShapeEngine engine;
+  final Analyzer engine;
   final int boardSize;
   final math.Random rng;
 
@@ -247,8 +247,11 @@ class ShapeGame extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Playing while browsing history discards the moves after here.
-      if (!atTip) line.removeRange(cursor, line.length);
+      // Playing while browsing history discards the moves and analysis after here.
+      if (!atTip) {
+        line.removeRange(cursor, line.length);
+        analyses.removeWhere((moveIndex, _) => moveIndex > cursor);
+      }
       final mover = pos.nextPlayer;
       pos.play(mover, loc);
       line.add(Move(mover, loc));
@@ -273,7 +276,12 @@ class ShapeGame extends ChangeNotifier {
       await _analyze(cursor, () => pos, [opponentRank]);
       final analysis = analyses[cursor]?[opponentRank];
       if (analysis != null) {
-        final candidates = analysis.policy.sample(topK: topK, topP: topP, minP: minP);
+        final candidates = analysis.policy.sample(
+          topK: topK,
+          topP: topP,
+          minP: minP,
+          excludePass: false,
+        );
         final choice = analysis.policy.pick(candidates, rng);
         var loc = (choice == null || choice.isPass)
             ? Board.passLoc

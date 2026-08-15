@@ -110,8 +110,15 @@ class ProviderTiming {
   bool get ok => msPerEval != null;
 }
 
+/// What the game loop needs from an engine. Lets tests drive the whole loop --
+/// navigation, cache invalidation, opponent sampling -- without a 107 MB model.
+abstract class Analyzer {
+  String get provider;
+  Future<Map<String, ProfileAnalysis>> analyze(GoPosition pos, List<String> profiles);
+}
+
 /// Runs the human-SL net on device.
-class ShapeEngine {
+class ShapeEngine implements Analyzer {
   final OrtSession session;
   final Features features;
   final int posLen;
@@ -120,6 +127,7 @@ class ShapeEngine {
   /// *accepted*: NNAPI partitions the graph and silently runs unsupported ops on
   /// CPU, so this being "NNAPI" does not by itself mean the NPU did the work.
   /// Latency is the only real evidence -- see [benchmarkProviders].
+  @override
   final String provider;
 
   ShapeEngine(this.session, this.posLen, this.provider) : features = Features(posLen);
@@ -202,6 +210,7 @@ class ShapeEngine {
   /// across profiles so a batch is possible, but measured batch-N is *slower* than N
   /// batch-1 calls on ORT's CPU provider (there is a sharp cliff between batch 1 and 2).
   /// Revisit if a hardware EP inverts that.
+  @override
   Future<Map<String, ProfileAnalysis>> analyze(GoPosition pos, List<String> profiles) async {
     final f = features.fillRowFeatures(pos);
     final nextPlayer = pos.nextPlayer;
