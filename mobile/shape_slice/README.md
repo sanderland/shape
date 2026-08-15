@@ -94,6 +94,41 @@ python export_fixtures.py    # featurizer fixtures
 with the stock config the same position differs by ~4e-02 and looks like a broken
 port.
 
+## Hardware acceleration: measured, and mostly a dead end
+
+Per-eval times for `b18c384nbt-humanv0` on a Galaxy S24+ (SM-S926B, Exynos 2400):
+
+```
+featurizer (Dart)   0 ms      CPU intra=1  708 ms
+NNAPI             245 ms      CPU intra=2  540 ms
+XNNPACK           506 ms      CPU intra=4  292 ms
+CPU               242 ms      <- default, all cores, wins
+```
+
+- **NNAPI is not an accelerator any more.** Matching CPU to within 1% is not the
+  phone lacking an NPU. NNAPI was deprecated in Android 15, vendors stopped
+  supporting it, and it only ever accelerated quantized graphs well — this is
+  fp32 with global pooling, so ORT partitions it back onto the CPU.
+- **XNNPACK is 2x worse** than the plain CPU provider here. Don't reach for it.
+- **Thread pinning does nothing**: ORT's default already uses all cores, and
+  every `intra=N` setting is slower.
+- **QNN reaches Qualcomm NPUs only.** A working implementation is on the
+  `qnn-experiment` branch — substituting `onnxruntime-android-qnn` for
+  `onnxruntime-android` is the entire change, since the plugin already requests
+  the provider, and QNN HTP takes fp16 so the model needs no quantizing. It
+  costs 135MB -> 284MB of APK (`libQnnHtpPrepare.so` alone is 69MB, and five HTP
+  generations ship). Merge it only for Qualcomm targets; on Exynos it cannot
+  engage at all.
+- **Exynos NPUs need Samsung's ENN SDK**, which is not openly available. There is
+  no route to this device's NPU.
+
+What is left, if inference ever needs to be faster, is the **GPU** rather than
+the NPU: ExecuTorch's Vulkan backend (attractive because `tools/onnx_export/`
+already has the PyTorch checkpoint, so no ONNX->TFLite conversion is needed) or
+LiteRT's GPU delegate. Both replace the inference layer wholesale, so they want
+a real reason. At three profiles per position the app spends ~0.7s thinking,
+which for a turn-based study tool is not obviously the thing to fix next.
+
 ## Gotchas found the hard way
 
 - **R8 strips ONNX Runtime.** It resolves `ai.onnxruntime.*` from JNI by name, so
