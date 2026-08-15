@@ -94,6 +94,43 @@ python export_fixtures.py    # featurizer fixtures
 with the stock config the same position differs by ~4e-02 and looks like a broken
 port.
 
+## MNN, and why there are two runtimes
+
+ONNX Runtime has no Android GPU backend (native WebGPU/Vulkan is still an open
+feature request), so measuring whether this phone's GPU beats its CPU needs a
+runtime that has one. MNN converts the same ONNX exactly — worst policy
+difference 4.0e-05 against ORT with zero top-1 disagreements across all seven
+profiles; see `tools/mnn/` — so the comparison is like for like.
+
+MNN is used **only by the benchmark**, never by gameplay. Neither its native
+libraries nor its model are in git (the repo ignores `*.so`, and they are 8 MB
+and 107 MB); CI fetches the libraries from MNN's release and converts the model
+from the ONNX it just exported. For a local build:
+
+```
+curl -sLO https://github.com/alibaba/MNN/releases/download/3.6.1/mnn_3.6.1_android_armv7_armv8_cpu_opencl_vulkan.zip
+unzip -q mnn_3.6.1_*.zip
+mkdir -p android/app/src/main/jniLibs/arm64-v8a
+cp mnn_3.6.1_*/arm64-v8a/{libMNN,libMNN_CL,libMNN_Vulkan,libMNN_Express,libmnncore,libc++_shared}.so \
+   android/app/src/main/jniLibs/arm64-v8a/
+mnnconvert -f ONNX --modelFile ~/.katrain/b18c384nbt-humanv0.onnx \
+           --MNNModel assets/humanv0.mnn --bizCode shape
+```
+
+Two things learned wiring it up:
+
+- **MNN needs explicit reshaping.** The ONNX export has a dynamic batch axis;
+  MNN's Interpreter API leaves it unresolved and writing into such a tensor
+  segfaults inside libMNN. `MainActivity.kt` pins the input shapes and re-plans
+  the session before touching data. (The Module API used by the desktop parity
+  check resizes on its own, which is why desktop never hit this.)
+- **The benchmark's MNN rows are opt-in**, behind a separate button. MNN
+  dispatches on advertised CPU features, and the Android emulator on Apple
+  Silicon claims SVE2 it cannot execute, so libMNN dies with SIGILL there — a
+  native fault no try/catch can contain. That is an emulator artifact (a real
+  Cortex-X4 has SVE2), but it means the MNN path is **unverified on real
+  hardware**; the ORT path is verified.
+
 ## Hardware acceleration: measured, and mostly a dead end
 
 Per-eval times for `b18c384nbt-humanv0` on a Galaxy S24+ (SM-S926B, Exynos 2400):

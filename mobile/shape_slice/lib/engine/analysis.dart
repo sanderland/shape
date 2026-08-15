@@ -180,88 +180,6 @@ class ShapeEngine implements Analyzer {
     throw StateError('no execution provider could load the model: $lastError');
   }
 
-  /// The profiles a hints-on position actually evaluates: player, target and the
-  /// score reference. The sequential-vs-batched rows use exactly this set, since
-  /// batch size changes the answer and measuring a batch of 4 would not settle a
-  /// workload of 3.
-  static const List<String> benchmarkProfiles = [
-    'rank_5k', 'rank_2d', 'proyear_2023', //
-  ];
-
-  /// Time each configuration on [pos], creating and closing a session per row.
-  ///
-  /// Deliberately measures rather than trusts: an NNAPI session that falls back to
-  /// CPU for most ops looks identical to a working one until you time it. Beyond
-  /// the provider comparison this sweeps CPU intra-op threads (ORT's default may
-  /// schedule onto little cores on big.LITTLE) and compares 4 sequential batch-1
-  /// evals against one batch-4 eval -- desktop CPU EP has a sharp batch>=2 cliff
-  /// that makes batching a big loss there, but only a device run settles it here.
-  static Future<List<ProviderTiming>> benchmarkProviders(
-    String assetPath,
-    GoPosition pos, {
-    int posLen = 19,
-    int reps = 3,
-    String profile = 'rank_5k',
-  }) async {
-    final out = <ProviderTiming>[];
-
-    // Featurization is pure Dart and runs identically for every provider, so time it
-    // separately -- if the ladder search dominates, no execution provider will help.
-    final fsw = Stopwatch()..start();
-    for (var i = 0; i < reps; i++) {
-      Features(posLen).fillRowFeatures(pos);
-    }
-    out.add(ProviderTiming('featurizer (Dart)', fsw.elapsedMilliseconds ~/ reps, null));
-
-    // One timed row: build a session, run [body] reps times, tear down.
-    Future<void> row(
-      String label,
-      OrtSessionOptions options,
-      Future<void> Function(ShapeEngine engine) body,
-    ) async {
-      OrtSession? session;
-      try {
-        session = await OnnxRuntime().createSessionFromAsset(assetPath, options: options);
-        final engine = ShapeEngine(session, posLen, label);
-        await body(engine); // warm up
-        final sw = Stopwatch()..start();
-        for (var i = 0; i < reps; i++) {
-          await body(engine);
-        }
-        out.add(ProviderTiming(label, sw.elapsedMilliseconds ~/ reps, null));
-      } catch (e) {
-        out.add(ProviderTiming(label, null, '$e'.split('\n').first));
-      } finally {
-        await session?.close();
-      }
-    }
-
-    Future<void> oneEval(ShapeEngine e) => e.analyze(pos, [profile]);
-
-    for (final p in benchmarkProviderOrder) {
-      await row(p.name, OrtSessionOptions(providers: [p]), oneEval);
-    }
-
-    // CPU intra-op thread sweep, one eval per call. ORT's default thread count on
-    // Android counts every core; pinning to the number of big cores may win.
-    for (final t in [1, 2, 4]) {
-      await row(
-        'CPU intra=$t',
-        OrtSessionOptions(providers: [OrtProvider.CPU], intraOpNumThreads: t),
-        oneEval,
-      );
-    }
-
-    // Per-position cost of a hints-on analysis (4 profiles): sequential vs batched.
-    final cpu = OrtSessionOptions(providers: [OrtProvider.CPU]);
-    await row('CPU seq x3 /pos', cpu, (e) => e.analyze(pos, benchmarkProfiles));
-    await row('CPU batch x3 /pos', cpu, (e) {
-      e.useBatchedAnalysis = true;
-      return e.analyze(pos, benchmarkProfiles);
-    });
-    return out;
-  }
-
   /// Evaluate all [profiles] in a single net call instead of one call each.
   ///
   /// Off by default: on ORT's CPU provider there is a sharp cliff between batch 1
@@ -289,6 +207,17 @@ class ShapeEngine implements Analyzer {
         : await _runSequential(f, metas, pos.boardSize);
     return {for (var i = 0; i < profiles.length; i++) profiles[i]: results[i]};
   }
+
+  /// Run pre-computed tensors, bypassing featurization. Used by the benchmark so
+  /// it can replay the fixed reference position and check the outputs.
+  Future<List<ProfileAnalysis>> runRaw(
+    FeatureResult f,
+    List<Float32List> metas,
+    int boardSize,
+  ) =>
+      useBatchedAnalysis && metas.length > 1
+          ? _runBatched(f, metas, boardSize)
+          : _runSequential(f, metas, boardSize);
 
   /// One batch-1 net call per metadata row, reusing the board tensors.
   Future<List<ProfileAnalysis>> _runSequential(

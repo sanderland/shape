@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 
 import 'board_painter.dart';
 import 'engine/analysis.dart';
+import 'engine/benchmark.dart';
 import 'game/shape_game.dart';
 
 const kModelAsset = 'assets/b18c384nbt-humanv0.onnx';
@@ -290,25 +291,34 @@ class _HomePageState extends State<HomePage> {
           ),
           Align(
             alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: g.busy || benchmarking ? null : () => _benchmark(g),
-              icon: const Icon(Icons.speed, size: 18),
-              label: Text(benchmarking ? 'Benchmarking…' : 'Benchmark providers'),
-            ),
+            child: Wrap(spacing: 4, children: [
+              TextButton.icon(
+                onPressed: g.busy || benchmarking ? null : () => _benchmark(g),
+                icon: const Icon(Icons.speed, size: 18),
+                label: Text(benchmarking ? 'Benchmarking…' : 'Benchmark ONNX Runtime'),
+              ),
+              TextButton.icon(
+                onPressed: g.busy || benchmarking
+                    ? null
+                    : () => _benchmark(g, includeMnn: true),
+                icon: const Icon(Icons.memory, size: 18),
+                label: const Text('+ MNN GPU'),
+              ),
+            ]),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _benchmark(ShapeGame g) async {
+  Future<void> _benchmark(ShapeGame g, {bool includeMnn = false}) async {
     if (benchmarking || g.busy) return;
     setState(() => benchmarking = true);
-    List<ProviderTiming> results;
+    List<BenchRow> results;
     try {
-      results = await ShapeEngine.benchmarkProviders(kModelAsset, g.pos);
+      results = await runBenchmark(includeMnn: includeMnn);
     } catch (e) {
-      results = [ProviderTiming('benchmark failed', null, '$e')];
+      results = [BenchRow('benchmark failed', error: '$e')];
     }
     if (!mounted) return;
     setState(() => benchmarking = false);
@@ -316,31 +326,53 @@ class _HomePageState extends State<HomePage> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Per-eval time'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final r in results)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Text(
-                  r.ok ? '${r.provider.padRight(18)} ${r.msPerEval} ms' : '${r.provider}: ${r.error}',
-                  style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                    color: r.ok ? Colors.black87 : Colors.red,
-                  ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final r in results)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(children: [
+                    SizedBox(
+                      width: 116,
+                      child: Text(r.label,
+                          style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                    ),
+                    SizedBox(
+                      width: 54,
+                      child: Text(r.ok ? '${r.msPerEval} ms' : '--',
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        r.error ?? r.status,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: r.error != null
+                              ? Colors.black45
+                              : (r.correct ? const Color(0xFF0B6E2E) : Colors.red),
+                        ),
+                      ),
+                    ),
+                  ]),
                 ),
+              const SizedBox(height: 10),
+              const Text(
+                'Every row runs the same fixed position and is checked against the '
+                'desktop reference, so a backend that is fast but wrong shows up as '
+                'wrong rather than as a win. "unavailable" means the device or '
+                'driver does not offer that backend.',
+                style: TextStyle(fontSize: 11, color: Colors.black54),
               ),
-            const SizedBox(height: 8),
-            const Text(
-              'A provider can accept the model and still run most ops on CPU, so '
-              'compare the numbers rather than trusting the name. The /pos rows '
-              'are a whole 4-profile position: if batch x4 beats seq x4, flip '
-              'useBatchedAnalysis; if an intra=N row beats CPU, pin the threads.',
-              style: TextStyle(fontSize: 11, color: Colors.black54),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),

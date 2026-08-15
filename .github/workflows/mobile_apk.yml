@@ -23,6 +23,7 @@ env:
   KATAGO_TAG: v1.17.2
   CKPT_URL: https://github.com/lightvector/KataGo/releases/download/v1.15.0/b18c384nbt-humanv0.ckpt
   MODEL_NAME: b18c384nbt-humanv0.onnx
+  MNN_VERSION: 3.6.1
 
 jobs:
   model:
@@ -50,6 +51,9 @@ jobs:
           pip install --quiet \
             'torch>=2.4' --index-url https://download.pytorch.org/whl/cpu
           pip install --quiet 'numpy>=1.26' 'onnx>=1.16' 'onnxruntime>=1.19' packaging
+          # MNN ships the ONNX converter in its Python package; the app benchmarks
+          # MNN's GPU backends against ONNX Runtime, which has none on Android.
+          pip install --quiet 'MNN==3.6.1'
 
       - name: Fetch KataGo python package
         if: steps.cache.outputs.cache-hit != 'true'
@@ -82,6 +86,10 @@ jobs:
           # Featurizer fixtures, so the Dart port is checked against a model+featurizer
           # pair generated together rather than whatever is committed.
           python export_fixtures.py
+          # Same net for MNN. Converted from the ONNX just produced, so the two
+          # runtimes in the benchmark are provably the same weights.
+          mnnconvert -f ONNX --modelFile "$SHAPE_ONNX_OUT" \
+                     --MNNModel "$GITHUB_WORKSPACE/out/humanv0.mnn" --bizCode shape
 
       - name: Show outputs
         run: ls -la out
@@ -103,6 +111,25 @@ jobs:
         with:
           name: model
           path: mobile/shape_slice/assets
+
+      # MNN publishes prebuilt Android .so files but no Maven artifact, and the
+      # repo's .gitignore excludes *.so, so fetch them rather than committing 8MB
+      # of binaries. The app uses MNN only in the benchmark, to compare its GPU
+      # backends against ONNX Runtime, which has none on Android.
+      - name: Fetch MNN Android runtime
+        working-directory: mobile/shape_slice
+        run: |
+          pkg="mnn_${MNN_VERSION}_android_armv7_armv8_cpu_opencl_vulkan"
+          curl -sL --retry 3 -o mnn.zip \
+            "https://github.com/alibaba/MNN/releases/download/${MNN_VERSION}/${pkg}.zip"
+          unzip -q mnn.zip
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          for l in libMNN.so libMNN_CL.so libMNN_Vulkan.so libMNN_Express.so \
+                   libmnncore.so libc++_shared.so; do
+            cp "${pkg}/arm64-v8a/$l" android/app/src/main/jniLibs/arm64-v8a/
+          done
+          rm -rf mnn.zip "$pkg"
+          ls -la android/app/src/main/jniLibs/arm64-v8a
 
       - uses: actions/setup-java@v4
         with:
