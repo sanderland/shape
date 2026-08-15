@@ -105,7 +105,7 @@ class ShapeGame extends ChangeNotifier {
   bool autoplayOpponent = true;
 
   /// When off, only the opponent's profile is evaluated: no heatmap, no feedback,
-  /// and one net call per position instead of four.
+  /// and one net call per position instead of two or three.
   bool hintsEnabled = true;
 
   /// Sampler settings, matching SHAPE's defaults.
@@ -123,9 +123,27 @@ class ShapeGame extends ChangeNotifier {
     pos = GoPosition(boardSize, Rules.japanese);
   }
 
-  List<String> get activeProfiles => hintsEnabled
-      ? {playerRank, targetRank, opponentRank, kReferenceProfile}.toList()
-      : {opponentRank}.toList();
+  /// Profiles to evaluate at the current position. Kept as small as the position's
+  /// role allows, because each profile is a full net call (~250ms on a phone):
+  ///
+  /// - hints off: only the opponent needs a policy to sample from.
+  /// - opponent about to reply at the tip: the position is transient (the reply
+  ///   lands moments later), so evaluate only what that moment needs -- the
+  ///   opponent's policy to sample from, and the reference lead for points-lost.
+  ///   The player/target heatmap is skipped here; navigating back to such a
+  ///   position later fills it lazily via [_analyze]'s cache-miss path.
+  /// - anywhere else: player + target (feedback and heatmap) + reference (lead).
+  ///   The opponent's policy is not needed where the opponent isn't moving; if it
+  ///   ever is, [_maybeOpponentMove] requests it explicitly before sampling.
+  ///
+  /// Net effect with hints on: a full exchange costs 2 + 3 evals instead of 4 + 4.
+  List<String> get activeProfiles {
+    if (!hintsEnabled) return {opponentRank}.toList();
+    if (autoplayOpponent && atTip && !humanToPlay && !gameOver) {
+      return {opponentRank, kReferenceProfile}.toList();
+    }
+    return {playerRank, targetRank, kReferenceProfile}.toList();
+  }
 
   /// Profiles needed to describe a move already played (no opponent sampling).
   List<String> get _feedbackProfiles =>
@@ -201,9 +219,11 @@ class ShapeGame extends ChangeNotifier {
 
     final beforeIdx = cursor - 1;
     // Normally both are already cached from when they were played; this only does
-    // work if hints were off then, or the ranks changed since.
+    // work if hints were off then, or the ranks changed since. The position after
+    // the move only contributes its reference lead (for points-lost) -- the
+    // player/target probabilities all come from the position before the move.
     await _analyze(beforeIdx, () => _positionAt(beforeIdx), _feedbackProfiles);
-    await _analyze(cursor, () => pos, _feedbackProfiles);
+    await _analyze(cursor, () => pos, const [kReferenceProfile]);
 
     final before = analyses[beforeIdx];
     final player = before?[playerRank];

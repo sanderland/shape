@@ -283,7 +283,9 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 8),
             const Text(
               'A provider can accept the model and still run most ops on CPU, so '
-              'compare the numbers rather than trusting the name.',
+              'compare the numbers rather than trusting the name. The /pos rows '
+              'are a whole 4-profile position: if batch x4 beats seq x4, flip '
+              'useBatchedAnalysis; if an intra=N row beats CPU, pin the threads.',
               style: TextStyle(fontSize: 11, color: Colors.black54),
             ),
           ],

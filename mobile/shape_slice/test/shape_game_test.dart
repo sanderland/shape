@@ -31,6 +31,7 @@ class FakeAnalyzer implements Analyzer {
 
   int calls = 0;
   final List<int> analyzedMoveCounts = [];
+  final List<List<String>> analyzedProfiles = [];
 
   /// Policy to hand back; defaults to a flat board policy with no pass.
   PolicyData Function(GoPosition pos)? policyFor;
@@ -40,6 +41,7 @@ class FakeAnalyzer implements Analyzer {
       GoPosition pos, List<String> profiles) async {
     calls += 1;
     analyzedMoveCounts.add(pos.moves.length);
+    analyzedProfiles.add(List.of(profiles));
     final policy = policyFor?.call(pos) ?? _flat(pos);
     return {
       for (final p in profiles) p: ProfileAnalysis(policy, encodeLine(pos), 0.5),
@@ -153,6 +155,29 @@ void main() {
     await g.setHints(true);
     expect(g.activeProfiles.length, greaterThan(1));
     expect(g.activeProfiles, contains(kReferenceProfile));
+  });
+
+  test('a full exchange evaluates 2 + 3 profiles, not 4 + 4', () async {
+    // Each profile is a ~250ms net call on a phone, so the per-position sets are
+    // deliberately minimal: the transient position while the opponent replies only
+    // needs the opponent's policy and the reference lead, and persistent positions
+    // never need the opponent's policy at all.
+    final fake = FakeAnalyzer();
+    final g = newGame(fake, autoplay: true);
+    await g.start();
+    expect(fake.analyzedProfiles.single.toSet(),
+        {g.playerRank, g.targetRank, kReferenceProfile});
+
+    fake.analyzedProfiles.clear();
+    await g.playAt(2, 2); // human plays; opponent autoplay replies
+    expect(g.line.length, 2);
+    expect(fake.analyzedProfiles.first.toSet(), {g.opponentRank, kReferenceProfile},
+        reason: 'transient position: sampling policy + reference lead only');
+    expect(fake.analyzedProfiles.last.toSet(),
+        {g.playerRank, g.targetRank, kReferenceProfile},
+        reason: 'after the reply: heatmap/feedback profiles + reference lead');
+    expect(fake.analyzedProfiles.expand((p) => p).length, 5,
+        reason: 'a full exchange must cost 5 profile evals');
   });
 
   test('illegal move is rejected without corrupting the line', () async {

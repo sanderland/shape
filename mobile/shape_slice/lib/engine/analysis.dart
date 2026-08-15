@@ -101,7 +101,9 @@ class ProfileAnalysis {
   ProfileAnalysis(this.policy, this.lead, this.winrate);
 }
 
-/// How one execution provider performed, for the in-app benchmark.
+/// How one benchmark configuration performed. [provider] is a free-form row
+/// label ("CPU", "CPU intra=2", "CPU batch x4 /pos", ...), not necessarily a
+/// bare execution provider name.
 class ProviderTiming {
   final String provider;
   final int? msPerEval;
@@ -178,10 +180,20 @@ class ShapeEngine implements Analyzer {
     throw StateError('no execution provider could load the model: $lastError');
   }
 
-  /// Time each provider on [pos], creating and closing a session per provider.
+  /// The 4 distinct profiles a default hints-on position evaluates; used by the
+  /// benchmark's sequential-vs-batched comparison so it measures the real workload.
+  static const List<String> benchmarkProfiles = [
+    'rank_5k', 'rank_2d', 'rank_1k', 'proyear_2023', //
+  ];
+
+  /// Time each configuration on [pos], creating and closing a session per row.
   ///
   /// Deliberately measures rather than trusts: an NNAPI session that falls back to
-  /// CPU for most ops looks identical to a working one until you time it.
+  /// CPU for most ops looks identical to a working one until you time it. Beyond
+  /// the provider comparison this sweeps CPU intra-op threads (ORT's default may
+  /// schedule onto little cores on big.LITTLE) and compares 4 sequential batch-1
+  /// evals against one batch-4 eval -- desktop CPU EP has a sharp batch>=2 cliff
+  /// that makes batching a big loss there, but only a device run settles it here.
   static Future<List<ProviderTiming>> benchmarkProviders(
     String assetPath,
     GoPosition pos, {
@@ -199,73 +211,178 @@ class ShapeEngine implements Analyzer {
     }
     out.add(ProviderTiming('featurizer (Dart)', fsw.elapsedMilliseconds ~/ reps, null));
 
-    for (final p in benchmarkProviderOrder) {
+    // One timed row: build a session, run [body] reps times, tear down.
+    Future<void> row(
+      String label,
+      OrtSessionOptions options,
+      Future<void> Function(ShapeEngine engine) body,
+    ) async {
       OrtSession? session;
       try {
-        session = await OnnxRuntime().createSessionFromAsset(
-          assetPath,
-          options: OrtSessionOptions(providers: [p]),
-        );
-        final engine = ShapeEngine(session, posLen, p.name);
-        await engine.analyze(pos, [profile]); // warm up
+        session = await OnnxRuntime().createSessionFromAsset(assetPath, options: options);
+        final engine = ShapeEngine(session, posLen, label);
+        await body(engine); // warm up
         final sw = Stopwatch()..start();
         for (var i = 0; i < reps; i++) {
-          await engine.analyze(pos, [profile]);
+          await body(engine);
         }
-        out.add(ProviderTiming(p.name, sw.elapsedMilliseconds ~/ reps, null));
+        out.add(ProviderTiming(label, sw.elapsedMilliseconds ~/ reps, null));
       } catch (e) {
-        out.add(ProviderTiming(p.name, null, '$e'.split('\n').first));
+        out.add(ProviderTiming(label, null, '$e'.split('\n').first));
       } finally {
         await session?.close();
       }
     }
+
+    Future<void> oneEval(ShapeEngine e) => e.analyze(pos, [profile]);
+
+    for (final p in benchmarkProviderOrder) {
+      await row(p.name, OrtSessionOptions(providers: [p]), oneEval);
+    }
+
+    // CPU intra-op thread sweep, one eval per call. ORT's default thread count on
+    // Android counts every core; pinning to the number of big cores may win.
+    for (final t in [1, 2, 4]) {
+      await row(
+        'CPU intra=$t',
+        OrtSessionOptions(providers: [OrtProvider.CPU], intraOpNumThreads: t),
+        oneEval,
+      );
+    }
+
+    // Per-position cost of a hints-on analysis (4 profiles): sequential vs batched.
+    final cpu = OrtSessionOptions(providers: [OrtProvider.CPU]);
+    await row('CPU seq x4 /pos', cpu, (e) => e.analyze(pos, benchmarkProfiles));
+    await row('CPU batch x4 /pos', cpu, (e) {
+      e.useBatchedAnalysis = true;
+      return e.analyze(pos, benchmarkProfiles);
+    });
     return out;
   }
 
+  /// Evaluate all [profiles] in a single net call instead of one call each.
+  ///
+  /// Off by default: on ORT's CPU provider there is a sharp cliff between batch 1
+  /// and batch 2 (desktop arm64, fp32: batch-1 30ms but batch-4 220ms, and
+  /// single-threaded batch-4 is 865ms vs 4x92ms sequential -- the slowdown is in
+  /// the conv kernels, not thread scheduling). Kept behind this flag so the
+  /// in-app benchmark can measure whether mobile ORT behaves the same.
+  bool useBatchedAnalysis = false;
+
   /// Evaluate [pos] under each of [profiles].
   ///
-  /// Runs one profile per call rather than batching them: bin/global are identical
-  /// across profiles so a batch is possible, but measured batch-N is *slower* than N
-  /// batch-1 calls on ORT's CPU provider (there is a sharp cliff between batch 1 and 2).
-  /// Revisit if a hardware EP inverts that.
+  /// bin/global are identical across profiles (only the 192-wide metadata row
+  /// differs), so they are uploaded once and reused across the sequential runs,
+  /// or tiled once for the batched path.
   @override
   Future<Map<String, ProfileAnalysis>> analyze(GoPosition pos, List<String> profiles) async {
     final f = features.fillRowFeatures(pos);
     final nextPlayer = pos.nextPlayer;
     final boardArea = pos.boardSize * pos.boardSize;
+    final metas = [
+      for (final p in profiles) getProfile(p).getMetadataRow(nextPlayer, boardArea),
+    ];
+    final results = useBatchedAnalysis && profiles.length > 1
+        ? await _runBatched(f, metas, pos.boardSize)
+        : await _runSequential(f, metas, pos.boardSize);
+    return {for (var i = 0; i < profiles.length; i++) profiles[i]: results[i]};
+  }
 
-    final out = <String, ProfileAnalysis>{};
-    for (final profile in profiles) {
-      final meta = getProfile(profile).getMetadataRow(nextPlayer, boardArea);
-      final inputs = {
-        'bin_input': await OrtValue.fromList(f.bin, [1, kNumBinFeatures, posLen, posLen]),
-        'global_input': await OrtValue.fromList(f.global, [1, kNumGlobalFeatures]),
-        'input_meta': await OrtValue.fromList(meta, [1, kMetadataChannels]),
-      };
-      final outputs = await session.run(inputs);
-      final policy = Float32List.fromList(_flatten(await outputs['policy']!.asList()));
-      final lead = _flatten(await outputs['lead']!.asList()).first;
-      final value = _flatten(await outputs['value']!.asList());
-      for (final v in inputs.values) {
-        v.dispose();
+  /// One batch-1 net call per metadata row, reusing the board tensors.
+  Future<List<ProfileAnalysis>> _runSequential(
+    FeatureResult f,
+    List<Float32List> metas,
+    int boardSize,
+  ) async {
+    final binValue = await OrtValue.fromList(f.bin, [1, kNumBinFeatures, posLen, posLen]);
+    final globalValue = await OrtValue.fromList(f.global, [1, kNumGlobalFeatures]);
+    try {
+      final out = <ProfileAnalysis>[];
+      for (final meta in metas) {
+        final metaValue = await OrtValue.fromList(meta, [1, kMetadataChannels]);
+        try {
+          final outputs = await session.run({
+            'bin_input': binValue,
+            'global_input': globalValue,
+            'input_meta': metaValue,
+          });
+          out.add((await _readOutputs(outputs, 1, boardSize)).single);
+        } finally {
+          await metaValue.dispose();
+        }
       }
-      // value is softmax over {win, loss, noresult} for the side to move.
-      final winrate = value.isNotEmpty ? value[0] : 0.5;
-      out[profile] = ProfileAnalysis(
-        PolicyData(policy, posLen, pos.boardSize),
-        lead,
-        winrate,
-      );
+      return out;
+    } finally {
+      await binValue.dispose();
+      await globalValue.dispose();
     }
-    return out;
+  }
+
+  /// All metadata rows as one batch-N net call.
+  Future<List<ProfileAnalysis>> _runBatched(
+    FeatureResult f,
+    List<Float32List> metas,
+    int boardSize,
+  ) async {
+    final n = metas.length;
+    final bin = Float32List(n * f.bin.length);
+    final global = Float32List(n * f.global.length);
+    final meta = Float32List(n * kMetadataChannels);
+    for (var i = 0; i < n; i++) {
+      bin.setAll(i * f.bin.length, f.bin);
+      global.setAll(i * f.global.length, f.global);
+      meta.setAll(i * kMetadataChannels, metas[i]);
+    }
+    final inputs = {
+      'bin_input': await OrtValue.fromList(bin, [n, kNumBinFeatures, posLen, posLen]),
+      'global_input': await OrtValue.fromList(global, [n, kNumGlobalFeatures]),
+      'input_meta': await OrtValue.fromList(meta, [n, kMetadataChannels]),
+    };
+    try {
+      final outputs = await session.run(inputs);
+      return await _readOutputs(outputs, n, boardSize);
+    } finally {
+      for (final v in inputs.values) {
+        await v.dispose();
+      }
+    }
+  }
+
+  /// Split the net's [n]-row outputs into one [ProfileAnalysis] per row.
+  Future<List<ProfileAnalysis>> _readOutputs(
+    Map<String, OrtValue> outputs,
+    int n,
+    int boardSize,
+  ) async {
+    final policyLen = posLen * posLen + 1;
+    try {
+      final policy = _floats(await outputs['policy']!.asFlattenedList());
+      final lead = _floats(await outputs['lead']!.asFlattenedList());
+      final value = _floats(await outputs['value']!.asFlattenedList());
+      return [
+        for (var i = 0; i < n; i++)
+          ProfileAnalysis(
+            PolicyData(policy.sublist(i * policyLen, (i + 1) * policyLen), posLen, boardSize),
+            lead[i],
+            // value is softmax over {win, loss, noresult} for the side to move.
+            value[i * 3],
+          ),
+      ];
+    } finally {
+      for (final v in outputs.values) {
+        await v.dispose();
+      }
+    }
   }
 }
 
-List<double> _flatten(dynamic v) {
-  if (v is num) return [v.toDouble()];
-  if (v is Float32List) return List<double>.from(v);
-  if (v is List) return v.expand(_flatten).toList();
-  throw ArgumentError('unexpected ORT output element: ${v.runtimeType}');
+Float32List _floats(List<dynamic> v) {
+  if (v is Float32List) return v;
+  final out = Float32List(v.length);
+  for (var i = 0; i < v.length; i++) {
+    out[i] = (v[i] as num).toDouble();
+  }
+  return out;
 }
 
 /// Board coords -> loc, guarding against off-board taps.
