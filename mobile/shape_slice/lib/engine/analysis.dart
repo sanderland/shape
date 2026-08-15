@@ -146,7 +146,10 @@ class ShapeEngine implements Analyzer {
   /// graph and silently falls back for ops it cannot handle, which for this net is
   /// evidently most of them. XNNPACK is markedly worse. Use the in-app benchmark to
   /// re-check on other hardware before reordering this.
+  /// QNN is tried first: it is the only route to a Qualcomm NPU now that NNAPI
+  /// is deprecated, and it falls through to CPU on every other device.
   static const List<OrtProvider> preferredProviders = [
+    OrtProvider.QNN,
     OrtProvider.CPU,
     OrtProvider.NNAPI,
     OrtProvider.XNNPACK,
@@ -155,6 +158,7 @@ class ShapeEngine implements Analyzer {
   /// Order used by the benchmark, so every provider is reported regardless of
   /// which one we default to.
   static const List<OrtProvider> benchmarkProviderOrder = [
+    OrtProvider.QNN,
     OrtProvider.NNAPI,
     OrtProvider.XNNPACK,
     OrtProvider.CPU,
