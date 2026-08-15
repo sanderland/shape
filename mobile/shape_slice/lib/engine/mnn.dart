@@ -82,4 +82,14 @@ class MnnRunner {
 
   static Future<String> cacheDir() async =>
       (await _channel.invokeMethod<String>('cacheDir'))!;
+
+  /// Android's own record of why the process last died. Survives a native crash,
+  /// unlike anything the app could write itself.
+  static Future<Map<String, Object?>?> lastExit() async {
+    try {
+      return await _channel.invokeMapMethod<String, Object?>('lastExit');
+    } catch (_) {
+      return null;
+    }
+  }
 }

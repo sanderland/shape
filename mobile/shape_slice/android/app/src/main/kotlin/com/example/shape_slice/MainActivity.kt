@@ -1,5 +1,9 @@
 package com.example.shape_slice
 
+import android.app.ActivityManager
+import android.app.ApplicationExitInfo
+import android.content.Context
+import android.os.Build
 import com.taobao.android.mnn.MNNNetNative
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -36,6 +40,7 @@ class MainActivity : FlutterActivity() {
                 try {
                     when (call.method) {
                         "cacheDir" -> result.success(cacheDir.absolutePath)
+                        "lastExit" -> result.success(lastExit())
                         "load" -> result.success(
                             load(
                                 call.argument<String>("path")!!,
@@ -61,6 +66,41 @@ class MainActivity : FlutterActivity() {
                     result.error("mnn", "${e.javaClass.simpleName}: ${e.message ?: e}", null)
                 }
             }
+    }
+
+    /**
+     * Why the process died last time, straight from Android.
+     *
+     * A native crash kills the process before any in-app logging can be trusted,
+     * so ask the platform instead: getHistoricalProcessExitReasons survives the
+     * death and carries the signal and, for native crashes, the tombstone.
+     */
+    private fun lastExit(): Map<String, Any?>? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val info = am.getHistoricalProcessExitReasons(packageName, 0, 5)
+            .firstOrNull { it.reason != ApplicationExitInfo.REASON_USER_REQUESTED }
+            ?: return null
+
+        val reason = when (info.reason) {
+            ApplicationExitInfo.REASON_CRASH_NATIVE -> "native crash"
+            ApplicationExitInfo.REASON_CRASH -> "java crash"
+            ApplicationExitInfo.REASON_SIGNALED -> "signalled"
+            ApplicationExitInfo.REASON_LOW_MEMORY -> "low memory"
+            ApplicationExitInfo.REASON_ANR -> "ANR"
+            ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "resource limit"
+            else -> "reason ${info.reason}"
+        }
+
+        // No tombstone here: traceInputStream returns a protobuf for native crashes,
+        // and rendering it as text produced only mojibake. The journal's last step is
+        // the useful signal; logcat has the trace for anyone with the device attached.
+        return mapOf(
+            "reason" to reason,
+            "description" to info.description,
+            "rssKb" to info.rss,
+            "importance" to info.importance,
+        )
     }
 
     /**

@@ -174,10 +174,19 @@ Future<List<BenchRow>> runBenchmark({
   await _Journal.init();
   final previous = _Journal.takePrevious();
   if (previous.isNotEmpty) {
-    rows.add(BenchRow('PREVIOUS RUN CRASHED', error: 'got as far as: ${previous.last}'));
-    for (final line in previous.where((l) => l.contains('ms'))) {
+    rows.add(BenchRow('PREVIOUS RUN DIED AT', error: previous.last));
+    for (final line in previous.where((l) => l.contains(' ms '))) {
       rows.add(BenchRow('  (prev) $line'));
     }
+  }
+
+  // Android's own record, which survives a native crash even when nothing the
+  // app wrote does.
+  final exit = await MnnRunner.lastExit();
+  if (exit != null) {
+    rows.add(BenchRow('LAST PROCESS EXIT',
+        error: '${exit['reason']}: ${exit['description']} '
+            '(rss ${((exit['rssKb'] as num?) ?? 0) ~/ 1024} MB)'));
   }
 
   // --- ONNX Runtime ---
