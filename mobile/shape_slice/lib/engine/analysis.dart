@@ -132,9 +132,27 @@ class ShapeEngine implements Analyzer {
 
   ShapeEngine(this.session, this.posLen, this.provider) : features = Features(posLen);
 
-  /// Preference order on Android: NNAPI (NPU/GPU), then XNNPACK (optimised CPU),
-  /// then plain CPU.
+  /// CPU first, because it measured best on real hardware.
+  ///
+  /// Galaxy (Snapdragon), b18c384nbt-humanv0, ms/eval:
+  ///   featurizer (Dart)   0
+  ///   NNAPI             249
+  ///   XNNPACK           602
+  ///   CPU               247
+  ///
+  /// NNAPI accepts the model and then runs it at CPU speed -- it partitions the
+  /// graph and silently falls back for ops it cannot handle, which for this net is
+  /// evidently most of them. XNNPACK is markedly worse. Use the in-app benchmark to
+  /// re-check on other hardware before reordering this.
   static const List<OrtProvider> preferredProviders = [
+    OrtProvider.CPU,
+    OrtProvider.NNAPI,
+    OrtProvider.XNNPACK,
+  ];
+
+  /// Order used by the benchmark, so every provider is reported regardless of
+  /// which one we default to.
+  static const List<OrtProvider> benchmarkProviderOrder = [
     OrtProvider.NNAPI,
     OrtProvider.XNNPACK,
     OrtProvider.CPU,
@@ -181,7 +199,7 @@ class ShapeEngine implements Analyzer {
     }
     out.add(ProviderTiming('featurizer (Dart)', fsw.elapsedMilliseconds ~/ reps, null));
 
-    for (final p in preferredProviders) {
+    for (final p in benchmarkProviderOrder) {
       OrtSession? session;
       try {
         session = await OnnxRuntime().createSessionFromAsset(
