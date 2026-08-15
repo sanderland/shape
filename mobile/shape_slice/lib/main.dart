@@ -148,6 +148,12 @@ class _HomePageState extends State<HomePage> {
             icon: const Icon(Icons.chevron_left),
           ),
           IconButton(
+            tooltip: 'What would ${rankLabel(g.targetRank)} have played?',
+            onPressed:
+                navEnabled && g.canReviewOwnMove ? g.reviewLastOwnMove : null,
+            icon: const Icon(Icons.lightbulb_outline),
+          ),
+          IconButton(
             tooltip: 'Forward',
             onPressed: navEnabled && g.canGoForward ? g.goNext : null,
             icon: const Icon(Icons.chevron_right),
@@ -228,22 +234,7 @@ class _HomePageState extends State<HomePage> {
             _feedbackCard(g),
             const SizedBox(height: 8),
           ],
-          Row(children: [
-            Expanded(child: _rankPicker(
-              'Your rank', g.playerRank, (v) => g.setRanks(player: v),
-              enabled: controlsEnabled,
-            )),
-            const SizedBox(width: 8),
-            Expanded(child: _rankPicker(
-              'Aiming at', g.targetRank, (v) => g.setRanks(target: v),
-              enabled: controlsEnabled,
-            )),
-          ]),
-          const SizedBox(height: 4),
-          _rankPicker(
-            'Opponent', g.opponentRank, (v) => g.setRanks(opponent: v),
-            enabled: controlsEnabled,
-          ),
+          _ranksSummary(g, controlsEnabled),
           const SizedBox(height: 8),
           _labelled('Feedback after your move', SegmentedButton<FeedbackMode>(
             segments: const [
@@ -365,8 +356,10 @@ class _HomePageState extends State<HomePage> {
         FeedbackMode.mistakesOnly => g.feedback?.isMistake ?? false,
       };
 
+  /// Stretches [child] to full width: without this a SegmentedButton sizes to
+  /// its labels, so the two rows came out different widths.
   Widget _labelled(String label, Widget child) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
             padding: const EdgeInsets.only(left: 4, bottom: 3),
@@ -375,6 +368,55 @@ class _HomePageState extends State<HomePage> {
           ),
           child,
         ],
+      );
+
+  /// One line instead of three dropdowns, so the card and controls fit without
+  /// scrolling. Tapping opens the pickers in a sheet.
+  Widget _ranksSummary(ShapeGame g, bool enabled) => InkWell(
+        onTap: enabled ? () => _editRanks(g) : null,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          child: Row(children: [
+            const Icon(Icons.tune, size: 16, color: Colors.black54),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'You ${rankLabel(g.playerRank)}  ·  aiming at '
+                '${rankLabel(g.targetRank)}  ·  vs ${rankLabel(g.opponentRank)}',
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+            const Icon(Icons.expand_more, size: 18, color: Colors.black54),
+          ]),
+        ),
+      );
+
+  Future<void> _editRanks(ShapeGame g) => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (_) => StatefulBuilder(
+          builder: (context, setSheetState) => Padding(
+            padding: EdgeInsets.fromLTRB(
+                16, 0, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              _rankPicker('Your rank', g.playerRank, (v) async {
+                await g.setRanks(player: v);
+                setSheetState(() {});
+              }, enabled: true),
+              const SizedBox(height: 10),
+              _rankPicker('Aiming at', g.targetRank, (v) async {
+                await g.setRanks(target: v);
+                setSheetState(() {});
+              }, enabled: true),
+              const SizedBox(height: 10),
+              _rankPicker('Opponent', g.opponentRank, (v) async {
+                await g.setRanks(opponent: v);
+                setSheetState(() {});
+              }, enabled: true),
+            ]),
+          ),
+        ),
       );
 
   Widget _feedbackCard(ShapeGame g) {

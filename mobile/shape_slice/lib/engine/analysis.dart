@@ -180,10 +180,12 @@ class ShapeEngine implements Analyzer {
     throw StateError('no execution provider could load the model: $lastError');
   }
 
-  /// The 4 distinct profiles a default hints-on position evaluates; used by the
-  /// benchmark's sequential-vs-batched comparison so it measures the real workload.
+  /// The profiles a hints-on position actually evaluates: player, target and the
+  /// score reference. The sequential-vs-batched rows use exactly this set, since
+  /// batch size changes the answer and measuring a batch of 4 would not settle a
+  /// workload of 3.
   static const List<String> benchmarkProfiles = [
-    'rank_5k', 'rank_2d', 'rank_1k', 'proyear_2023', //
+    'rank_5k', 'rank_2d', 'proyear_2023', //
   ];
 
   /// Time each configuration on [pos], creating and closing a session per row.
@@ -252,8 +254,8 @@ class ShapeEngine implements Analyzer {
 
     // Per-position cost of a hints-on analysis (4 profiles): sequential vs batched.
     final cpu = OrtSessionOptions(providers: [OrtProvider.CPU]);
-    await row('CPU seq x4 /pos', cpu, (e) => e.analyze(pos, benchmarkProfiles));
-    await row('CPU batch x4 /pos', cpu, (e) {
+    await row('CPU seq x3 /pos', cpu, (e) => e.analyze(pos, benchmarkProfiles));
+    await row('CPU batch x3 /pos', cpu, (e) {
       e.useBatchedAnalysis = true;
       return e.analyze(pos, benchmarkProfiles);
     });

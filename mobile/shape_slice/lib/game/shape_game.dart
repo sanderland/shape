@@ -407,6 +407,28 @@ class ShapeGame extends ChangeNotifier {
     }
   }
 
+  /// Index of the last move you played at or before the cursor, or null.
+  int? get lastOwnMoveIndex {
+    for (var i = cursor - 1; i >= 0; i--) {
+      if (line[i].pla == humanColor && !line[i].isPass) return i;
+    }
+    return null;
+  }
+
+  bool get canReviewOwnMove => lastOwnMoveIndex != null;
+
+  /// Jump to the position you faced before your last move and paint the target
+  /// rank's policy there -- "what would a 2d have played?".
+  ///
+  /// Skips back over the opponent's replies, so it lands on your decision rather
+  /// than theirs no matter where the cursor is.
+  Future<void> reviewLastOwnMove() async {
+    final idx = lastOwnMoveIndex;
+    if (idx == null || busy) return;
+    heatmapMode = HeatmapMode.target;
+    await _goTo(idx);
+  }
+
   Future<void> goFirst() => _goTo(0);
   Future<void> goLast() => _goTo(line.length);
 

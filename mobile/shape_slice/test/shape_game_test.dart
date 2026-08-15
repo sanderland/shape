@@ -203,6 +203,31 @@ void main() {
         reason: 'a full exchange must cost 5 profile evals');
   });
 
+  test('review jumps to the position before your last move, not the reply',
+      () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake, autoplay: true);
+    await g.start();
+    await g.playAt(2, 2); // your move at index 0; opponent replies at index 1
+    expect(g.line.length, 2);
+    expect(g.cursor, 2);
+
+    await g.setHeatmapMode(HeatmapMode.off);
+    await g.reviewLastOwnMove();
+
+    expect(g.cursor, 0, reason: 'should land on the position you faced');
+    expect(g.heatmapMode, HeatmapMode.target,
+        reason: 'the point of the button is to show the target policy');
+    expect(g.analysisFor(g.targetRank), isNotNull);
+  });
+
+  test('review is unavailable before you have moved', () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake, autoplay: true);
+    await g.start();
+    expect(g.canReviewOwnMove, isFalse);
+  });
+
   test('illegal move is rejected without corrupting the line', () async {
     final fake = FakeAnalyzer();
     final g = newGame(fake);
