@@ -7,11 +7,19 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 
 import 'board.dart';
 import 'features.dart';
+import 'mnn.dart';
+import 'reference.dart';
 import '../sgf_metadata.dart';
+
+/// The same net in two formats. MNN's is converted from the ONNX one and checked
+/// for parity offline (tools/mnn/) and again on device at startup.
+const String kOnnxAsset = 'assets/b18c384nbt-humanv0.onnx';
+const String kMnnAsset = 'assets/humanv0.mnn';
 
 /// A move suggestion: board coords (null == pass) with its probability.
 class PolicyMove {
@@ -119,81 +127,233 @@ abstract class Analyzer {
   Future<Map<String, ProfileAnalysis>> analyze(GoPosition pos, List<String> profiles);
 }
 
+/// Raw net outputs, flattened across the batch.
+class NetOutputs {
+  final Float32List policy;
+  final Float32List lead;
+  final Float32List value;
+  const NetOutputs(this.policy, this.lead, this.value);
+}
+
+/// One loaded copy of the net.
+///
+/// Two implementations exist because they are not close in speed: on a Galaxy
+/// S24+ the same model runs at 104 ms/eval under MNN and 217 ms under ONNX
+/// Runtime. Which one gameplay gets is decided at startup by [ShapeEngine.load].
+abstract class NetRunner {
+  String get label;
+
+  /// Whether more than one metadata row fits in a single call.
+  bool get supportsBatch;
+
+  /// One forward pass over [n] rows; bin/global/meta are already tiled to [n].
+  Future<NetOutputs> run(Float32List bin, Float32List global, Float32List meta, int n);
+
+  Future<void> close();
+}
+
+class OrtRunner implements NetRunner {
+  final OrtSession session;
+  final int posLen;
+  @override
+  final String label;
+
+  OrtRunner(this.session, this.posLen, this.label);
+
+  @override
+  bool get supportsBatch => true;
+
+  static Future<OrtRunner> load(OrtProvider provider, {int posLen = 19}) async {
+    final session = await OnnxRuntime().createSessionFromAsset(
+      kOnnxAsset,
+      options: OrtSessionOptions(providers: [provider]),
+    );
+    return OrtRunner(session, posLen, 'ORT ${provider.name}');
+  }
+
+  /// bin and global are identical across the profiles of one position, so this
+  /// re-uploads them per call where hoisting them would not. At 32 KB against a
+  /// ~100 ms forward pass that is noise, and it keeps the interface batch-shaped.
+  @override
+  Future<NetOutputs> run(Float32List bin, Float32List global, Float32List meta, int n) async {
+    final inputs = {
+      'bin_input': await OrtValue.fromList(bin, [n, kNumBinFeatures, posLen, posLen]),
+      'global_input': await OrtValue.fromList(global, [n, kNumGlobalFeatures]),
+      'input_meta': await OrtValue.fromList(meta, [n, kMetadataChannels]),
+    };
+    try {
+      final outputs = await session.run(inputs);
+      try {
+        return NetOutputs(
+          _floats(await outputs['policy']!.asFlattenedList()),
+          _floats(await outputs['lead']!.asFlattenedList()),
+          _floats(await outputs['value']!.asFlattenedList()),
+        );
+      } finally {
+        for (final v in outputs.values) {
+          await v.dispose();
+        }
+      }
+    } finally {
+      for (final v in inputs.values) {
+        await v.dispose();
+      }
+    }
+  }
+
+  @override
+  Future<void> close() => session.close();
+}
+
+class MnnNetRunner implements NetRunner {
+  final MnnBackend backend;
+  MnnNetRunner(this.backend);
+
+  @override
+  String get label => backend.label;
+
+  /// MainActivity pins the input shapes to batch 1, because the ONNX export's
+  /// dynamic batch axis is left unresolved by MNN's Interpreter API.
+  @override
+  bool get supportsBatch => false;
+
+  static Future<MnnNetRunner> load(MnnBackend backend) async {
+    await MnnRunner.load(kMnnAsset, backend);
+    return MnnNetRunner(backend);
+  }
+
+  @override
+  Future<NetOutputs> run(Float32List bin, Float32List global, Float32List meta, int n) async {
+    assert(n == 1, 'MNN bridge is pinned to batch 1');
+    Map<String, Float32List> out;
+    try {
+      out = await MnnRunner.run(bin, global, meta);
+    } on PlatformException {
+      // There is one native session, and the benchmark loads and releases it. A
+      // benchmark run mid-game therefore leaves gameplay without one; reload.
+      await MnnRunner.load(kMnnAsset, backend);
+      out = await MnnRunner.run(bin, global, meta);
+    }
+    return NetOutputs(out['policy']!, out['lead']!, out['value']!);
+  }
+
+  @override
+  Future<void> close() => MnnRunner.release();
+}
+
 /// Runs the human-SL net on device.
 class ShapeEngine implements Analyzer {
-  final OrtSession session;
+  final NetRunner runner;
   final Features features;
   final int posLen;
 
-  /// Which execution provider initialised. Note this is only the provider ORT
-  /// *accepted*: NNAPI partitions the graph and silently runs unsupported ops on
-  /// CPU, so this being "NNAPI" does not by itself mean the NPU did the work.
-  /// Latency is the only real evidence -- see [benchmarkProviders].
+  /// Why the engine is not on a faster runtime, if it is not. Empty on the happy
+  /// path. Surfaced in the UI because "MNN crashed this device, so you are on the
+  /// 2x slower runtime" is something the user should be told, not have to guess
+  /// from the timings.
+  final List<String> notes;
+
+  ShapeEngine(this.runner, {this.posLen = 19, this.notes = const []})
+      : features = Features(posLen);
+
+  /// Which runtime and backend actually got loaded. Note that for ONNX Runtime
+  /// this is only the provider it *accepted*: NNAPI partitions the graph and
+  /// silently runs unsupported ops on CPU, so "NNAPI" does not by itself mean the
+  /// NPU did the work. Latency is the only real evidence -- see the benchmark.
   @override
-  final String provider;
+  String get provider => runner.label;
 
-  ShapeEngine(this.session, this.posLen, this.provider) : features = Features(posLen);
-
-  /// CPU first, because it measured best on real hardware.
+  /// ONNX Runtime providers, best first, used when MNN is unavailable.
   ///
-  /// Galaxy (Snapdragon), b18c384nbt-humanv0, ms/eval:
-  ///   featurizer (Dart)   0
-  ///   NNAPI             249
-  ///   XNNPACK           602
-  ///   CPU               247
-  ///
-  /// NNAPI accepts the model and then runs it at CPU speed -- it partitions the
-  /// graph and silently falls back for ops it cannot handle, which for this net is
-  /// evidently most of them. XNNPACK is markedly worse. Use the in-app benchmark to
-  /// re-check on other hardware before reordering this.
+  /// Galaxy S24+, b18c384nbt-humanv0, ms/eval: CPU 217, NNAPI 216, XNNPACK 472.
+  /// NNAPI accepts the model and then runs it at CPU speed -- it falls back for
+  /// ops it cannot handle, which for this net is evidently most of them -- and it
+  /// is deprecated as of Android 15. XNNPACK is markedly worse.
   static const List<OrtProvider> preferredProviders = [
     OrtProvider.CPU,
     OrtProvider.NNAPI,
     OrtProvider.XNNPACK,
   ];
 
-  /// Order used by the benchmark, so every provider is reported regardless of
-  /// which one we default to.
-  static const List<OrtProvider> benchmarkProviderOrder = [
-    OrtProvider.NNAPI,
-    OrtProvider.XNNPACK,
-    OrtProvider.CPU,
-  ];
+  /// Load the net on the fastest runtime this device will run *correctly*.
+  ///
+  /// MNN first: 104 ms/eval against ONNX Runtime's 217 on a Galaxy S24+, both
+  /// verified against the same reference position. Its OpenCL backend ties CPU at
+  /// 105 ms, so the win is the runtime and not the GPU, and CPU is the one with
+  /// no driver surface to go wrong.
+  ///
+  /// MNN is tried rather than assumed, because it dispatches on advertised CPU
+  /// features and a machine that lies about them (the Android emulator on Apple
+  /// Silicon claims SVE2) dies with SIGILL inside libMNN -- a native fault no Dart
+  /// or Kotlin catch can contain. [MnnTrial] is what makes trying it safe: the
+  /// breadcrumb it leaves turns a crash into a one-time cost, because the next
+  /// launch sees it and takes ONNX Runtime instead.
+  ///
+  /// Loading is not enough to earn gameplay. A runtime must also reproduce the
+  /// desktop answer on the bundled reference position, so a backend that returns
+  /// garbage quickly is rejected exactly like one that fails to load. ORT is the
+  /// baseline the reference was checked against and is not re-verified here; that
+  /// keeps the extra forward pass on the risky path only.
+  static Future<ShapeEngine> load({int posLen = 19, bool allowMnn = true}) async {
+    final errors = <String>[];
 
-  static Future<ShapeEngine> load(
-    String assetPath, {
-    int posLen = 19,
-    List<OrtProvider>? prefer,
-  }) async {
-    Object? lastError;
-    for (final p in prefer ?? preferredProviders) {
-      try {
-        final session = await OnnxRuntime().createSessionFromAsset(
-          assetPath,
-          options: OrtSessionOptions(providers: [p]),
-        );
-        return ShapeEngine(session, posLen, p.name);
-      } catch (e) {
-        lastError = e;
+    if (allowMnn) {
+      if (await MnnTrial.crashedBefore()) {
+        errors.add('MNN skipped: it crashed this device on an earlier run');
+      } else {
+        await MnnTrial.begin();
+        try {
+          final runner = await MnnNetRunner.load(MnnBackend.cpu);
+          final check = await verify(runner);
+          if (check.ok) {
+            await MnnTrial.succeeded();
+            return ShapeEngine(runner, posLen: posLen);
+          }
+          errors.add('${runner.label}: $check');
+          await runner.close();
+        } catch (e) {
+          errors.add('MNN CPU: ${'$e'.split('\n').first}');
+        }
+        // Only reached if MNN failed *cleanly*. A hard crash never gets here, which
+        // is the whole point of the breadcrumb.
+        await MnnTrial.succeeded();
       }
     }
-    throw StateError('no execution provider could load the model: $lastError');
+
+    for (final p in preferredProviders) {
+      try {
+        return ShapeEngine(await OrtRunner.load(p, posLen: posLen),
+            posLen: posLen, notes: errors);
+      } catch (e) {
+        errors.add('ORT ${p.name}: ${'$e'.split('\n').first}');
+      }
+    }
+    throw StateError('no runtime could load the model:\n${errors.join('\n')}');
   }
 
-  /// Evaluate all [profiles] in a single net call instead of one call each.
+  /// Does this runner reproduce the desktop answer on the bundled position?
+  static Future<ReferenceCheck> verify(NetRunner runner) async {
+    final ref = await ReferencePosition.load();
+    final out = await runner.run(ref.bin, ref.global, ref.meta, 1);
+    return ref.check(out.policy);
+  }
+
+  /// Evaluate all profiles in a single net call instead of one call each.
   ///
   /// Off by default: on ORT's CPU provider there is a sharp cliff between batch 1
   /// and batch 2 (desktop arm64, fp32: batch-1 30ms but batch-4 220ms, and
   /// single-threaded batch-4 is 865ms vs 4x92ms sequential -- the slowdown is in
-  /// the conv kernels, not thread scheduling). Kept behind this flag so the
-  /// in-app benchmark can measure whether mobile ORT behaves the same.
+  /// the conv kernels, not thread scheduling), and on device batch x3 measured
+  /// 714 ms against 3x217 sequential. Kept as a flag so it stays measurable.
   bool useBatchedAnalysis = false;
+
+  bool get _batching => useBatchedAnalysis && runner.supportsBatch;
 
   /// Evaluate [pos] under each of [profiles].
   ///
-  /// bin/global are identical across profiles (only the 192-wide metadata row
-  /// differs), so they are uploaded once and reused across the sequential runs,
-  /// or tiled once for the batched path.
+  /// bin/global are identical across profiles -- only the 192-wide metadata row
+  /// differs -- so featurization happens once regardless of how many profiles the
+  /// caller asks for.
   @override
   Future<Map<String, ProfileAnalysis>> analyze(GoPosition pos, List<String> profiles) async {
     final f = features.fillRowFeatures(pos);
@@ -202,7 +362,7 @@ class ShapeEngine implements Analyzer {
     final metas = [
       for (final p in profiles) getProfile(p).getMetadataRow(nextPlayer, boardArea),
     ];
-    final results = useBatchedAnalysis && profiles.length > 1
+    final results = _batching && profiles.length > 1
         ? await _runBatched(f, metas, pos.boardSize)
         : await _runSequential(f, metas, pos.boardSize);
     return {for (var i = 0; i < profiles.length; i++) profiles[i]: results[i]};
@@ -215,41 +375,24 @@ class ShapeEngine implements Analyzer {
     List<Float32List> metas,
     int boardSize,
   ) =>
-      useBatchedAnalysis && metas.length > 1
+      _batching && metas.length > 1
           ? _runBatched(f, metas, boardSize)
           : _runSequential(f, metas, boardSize);
 
-  /// One batch-1 net call per metadata row, reusing the board tensors.
+  /// One batch-1 net call per metadata row.
   Future<List<ProfileAnalysis>> _runSequential(
     FeatureResult f,
     List<Float32List> metas,
     int boardSize,
   ) async {
-    final binValue = await OrtValue.fromList(f.bin, [1, kNumBinFeatures, posLen, posLen]);
-    final globalValue = await OrtValue.fromList(f.global, [1, kNumGlobalFeatures]);
-    try {
-      final out = <ProfileAnalysis>[];
-      for (final meta in metas) {
-        final metaValue = await OrtValue.fromList(meta, [1, kMetadataChannels]);
-        try {
-          final outputs = await session.run({
-            'bin_input': binValue,
-            'global_input': globalValue,
-            'input_meta': metaValue,
-          });
-          out.add((await _readOutputs(outputs, 1, boardSize)).single);
-        } finally {
-          await metaValue.dispose();
-        }
-      }
-      return out;
-    } finally {
-      await binValue.dispose();
-      await globalValue.dispose();
+    final out = <ProfileAnalysis>[];
+    for (final meta in metas) {
+      out.addAll(_split(await runner.run(f.bin, f.global, meta, 1), 1, boardSize));
     }
+    return out;
   }
 
-  /// All metadata rows as one batch-N net call.
+  /// All metadata rows as one batch-N net call, with the board tensors tiled.
   Future<List<ProfileAnalysis>> _runBatched(
     FeatureResult f,
     List<Float32List> metas,
@@ -264,47 +407,27 @@ class ShapeEngine implements Analyzer {
       global.setAll(i * f.global.length, f.global);
       meta.setAll(i * kMetadataChannels, metas[i]);
     }
-    final inputs = {
-      'bin_input': await OrtValue.fromList(bin, [n, kNumBinFeatures, posLen, posLen]),
-      'global_input': await OrtValue.fromList(global, [n, kNumGlobalFeatures]),
-      'input_meta': await OrtValue.fromList(meta, [n, kMetadataChannels]),
-    };
-    try {
-      final outputs = await session.run(inputs);
-      return await _readOutputs(outputs, n, boardSize);
-    } finally {
-      for (final v in inputs.values) {
-        await v.dispose();
-      }
-    }
+    return _split(await runner.run(bin, global, meta, n), n, boardSize);
   }
 
   /// Split the net's [n]-row outputs into one [ProfileAnalysis] per row.
-  Future<List<ProfileAnalysis>> _readOutputs(
-    Map<String, OrtValue> outputs,
-    int n,
-    int boardSize,
-  ) async {
+  List<ProfileAnalysis> _split(NetOutputs o, int n, int boardSize) {
     final policyLen = posLen * posLen + 1;
-    try {
-      final policy = _floats(await outputs['policy']!.asFlattenedList());
-      final lead = _floats(await outputs['lead']!.asFlattenedList());
-      final value = _floats(await outputs['value']!.asFlattenedList());
-      return [
-        for (var i = 0; i < n; i++)
-          ProfileAnalysis(
-            PolicyData(policy.sublist(i * policyLen, (i + 1) * policyLen), posLen, boardSize),
-            lead[i],
-            // value is softmax over {win, loss, noresult} for the side to move.
-            value[i * 3],
-          ),
-      ];
-    } finally {
-      for (final v in outputs.values) {
-        await v.dispose();
-      }
-    }
+    return [
+      for (var i = 0; i < n; i++)
+        ProfileAnalysis(
+          PolicyData(
+              Float32List.sublistView(o.policy, i * policyLen, (i + 1) * policyLen),
+              posLen,
+              boardSize),
+          o.lead[i],
+          // value is softmax over {win, loss, noresult} for the side to move.
+          o.value[i * 3],
+        ),
+    ];
   }
+
+  Future<void> close() => runner.close();
 }
 
 Float32List _floats(List<dynamic> v) {

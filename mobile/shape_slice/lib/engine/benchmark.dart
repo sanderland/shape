@@ -7,17 +7,13 @@
 // (GPU output that never gets copied back to host looks exactly like this), so
 // timing alone is not enough to trust a row.
 
-import 'dart:convert';
-import 'dart:typed_data';
-
-import 'package:flutter/services.dart';
-import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
-
 import 'dart:io';
 
+import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
+
 import 'analysis.dart';
-import 'features.dart';
 import 'mnn.dart';
+import 'reference.dart';
 
 /// A running log of the benchmark, flushed to disk as it goes.
 ///
@@ -64,94 +60,35 @@ class _Journal {
   }
 }
 
-const String kOnnxAsset = 'assets/b18c384nbt-humanv0.onnx';
-const String kMnnAsset = 'assets/humanv0.mnn';
-const String kBenchProfile = 'rank_5k';
-
-/// Tolerance for "same answer as desktop". fp32 rounding across runtimes lands
-/// around 1e-5; anything near 1e-3 means a backend is quietly doing its own
-/// thing, and a wrong top move means it is broken outright.
-const double kBenchTolerance = 1e-3;
-
+/// One row of the results table: how fast, and whether it was right.
 class BenchRow {
   final String label;
   final int? msPerEval;
-  final double? maxDiff;
-  final bool? topMoveOk;
+  final ReferenceCheck? check;
   final String? error;
 
-  const BenchRow(this.label, {this.msPerEval, this.maxDiff, this.topMoveOk, this.error});
+  const BenchRow(this.label, {this.msPerEval, this.check, this.error});
 
   bool get ok => error == null && msPerEval != null;
-  bool get correct => topMoveOk == true && (maxDiff ?? 1) < kBenchTolerance;
+  bool get correct => check?.ok ?? false;
 
-  String get status {
-    if (error != null) return 'unavailable';
-    if (topMoveOk == false) return 'WRONG MOVE';
-    if ((maxDiff ?? 0) >= kBenchTolerance) return 'differs ${maxDiff!.toStringAsExponential(0)}';
-    return 'ok';
-  }
-}
-
-/// The fixed position and the expected outputs for it.
-class _Reference {
-  final Float32List bin;
-  final Float32List global;
-  final Float32List meta;
-  final int expectedTopIndex;
-  final Map<int, double> expectedPolicy;
-
-  _Reference(this.bin, this.global, this.meta, this.expectedTopIndex, this.expectedPolicy);
-
-  static Future<_Reference> load() async {
-    final raw = await rootBundle.load('assets/position.bin');
-    const binLen = kNumBinFeatures * 19 * 19;
-    final all = raw.buffer.asFloat32List(raw.offsetInBytes, binLen + kNumGlobalFeatures);
-    final ref = jsonDecode(await rootBundle.loadString('assets/reference.json'))
-        as Map<String, dynamic>;
-    final profile = (ref['profiles'] as Map)[kBenchProfile] as Map<String, dynamic>;
-    final top = (profile['top'] as List).cast<Map<String, dynamic>>();
-    return _Reference(
-      Float32List.fromList(all.sublist(0, binLen)),
-      Float32List.fromList(all.sublist(binLen)),
-      Float32List.fromList(
-          (profile['meta'] as List).map((e) => (e as num).toDouble()).toList()),
-      top.first['idx'] as int,
-      {for (final e in top) e['idx'] as int: (e['p'] as num).toDouble()},
-    );
-  }
-
-  /// Largest disagreement with desktop over the moves desktop rated highest.
-  (double, bool) check(List<double> policy) {
-    var worst = 0.0;
-    expectedPolicy.forEach((idx, p) {
-      final d = (policy[idx] - p).abs();
-      if (d > worst) worst = d;
-    });
-    var best = 0;
-    for (var i = 1; i < policy.length; i++) {
-      if (policy[i] > policy[best]) best = i;
-    }
-    return (worst, best == expectedTopIndex);
-  }
+  String get status => error != null ? 'unavailable' : '${check ?? ''}';
 }
 
 /// Times [body] after a warm-up, and checks what it returned.
 Future<BenchRow> _row(
   String label,
-  _Reference ref,
+  ReferencePosition ref,
   int reps,
   Future<List<double>> Function() body,
 ) async {
   try {
-    final warm = await body();
-    final (diff, topOk) = ref.check(warm);
+    final check = ref.check(await body());
     final sw = Stopwatch()..start();
     for (var i = 0; i < reps; i++) {
       await body();
     }
-    return BenchRow(label,
-        msPerEval: sw.elapsedMilliseconds ~/ reps, maxDiff: diff, topMoveOk: topOk);
+    return BenchRow(label, msPerEval: sw.elapsedMilliseconds ~/ reps, check: check);
   } catch (e) {
     return BenchRow(label, error: '$e'.split('\n').first);
   }
@@ -167,9 +104,9 @@ Future<List<BenchRow>> runBenchmark({
   int posLen = 19,
   bool includeMnn = false,
 }) async {
-  final ref = await _Reference.load();
+  final ref = await ReferencePosition.load();
   final rows = <BenchRow>[];
-  final features = FeatureResult(ref.bin, ref.global);
+  final features = ref.features;
 
   await _Journal.init();
   final previous = _Journal.takePrevious();
@@ -190,11 +127,11 @@ Future<List<BenchRow>> runBenchmark({
   }
 
   // --- ONNX Runtime ---
-  Future<void> ortRow(String label, OrtSessionOptions options, {int batch = 1}) async {
-    OrtSession? session;
+  Future<void> ortRow(String label, OrtProvider provider, {int batch = 1}) async {
+    OrtRunner? runner;
     try {
-      session = await OnnxRuntime().createSessionFromAsset(kOnnxAsset, options: options);
-      final engine = ShapeEngine(session, posLen, label)..useBatchedAnalysis = batch > 1;
+      runner = await OrtRunner.load(provider, posLen: posLen);
+      final engine = ShapeEngine(runner, posLen: posLen)..useBatchedAnalysis = batch > 1;
       final metas = List.filled(batch, ref.meta);
       _Journal.append('$label: starting');
       final row = await _row(label, ref, reps, () async {
@@ -206,15 +143,14 @@ Future<List<BenchRow>> runBenchmark({
     } catch (e) {
       rows.add(BenchRow(label, error: '$e'.split('\n').first));
     } finally {
-      await session?.close();
+      await runner?.close();
     }
   }
 
   for (final p in [OrtProvider.CPU, OrtProvider.NNAPI, OrtProvider.XNNPACK]) {
-    await ortRow('ORT ${p.name}', OrtSessionOptions(providers: [p]));
+    await ortRow('ORT ${p.name}', p);
   }
-  await ortRow('ORT CPU batch x3',
-      OrtSessionOptions(providers: [OrtProvider.CPU]), batch: 3);
+  await ortRow('ORT CPU batch x3', OrtProvider.CPU, batch: 3);
 
   if (!includeMnn) return rows;
 

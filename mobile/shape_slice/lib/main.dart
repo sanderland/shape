@@ -13,7 +13,6 @@ import 'engine/analysis.dart';
 import 'engine/benchmark.dart';
 import 'game/shape_game.dart';
 
-const kModelAsset = 'assets/b18c384nbt-humanv0.onnx';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -54,7 +53,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _load() async {
     try {
-      final engine = await ShapeEngine.load(kModelAsset);
+      final engine = await ShapeEngine.load();
       final g = ShapeGame(engine, boardSize: 19);
       g.addListener(_onGameChanged);
       setState(() {
@@ -285,6 +284,10 @@ class _HomePageState extends State<HomePage> {
               Text('move ${g.cursor}/${g.line.length}   '
                   '${g.gameOver ? "game over" : (g.humanToPlay ? "your turn" : "opponent…")}   '
                   '${g.analysisMs} ms   ${g.engine.provider}'),
+              for (final note in (g.engine is ShapeEngine
+                  ? (g.engine as ShapeEngine).notes
+                  : const <String>[]))
+                Text(note, style: const TextStyle(color: Colors.orange, fontSize: 11)),
               if (g.error != null)
                 Text(g.error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
             ]),
@@ -302,7 +305,7 @@ class _HomePageState extends State<HomePage> {
                     ? null
                     : () => _benchmark(g, includeMnn: true),
                 icon: const Icon(Icons.memory, size: 18),
-                label: const Text('+ MNN GPU'),
+                label: const Text('+ MNN'),
               ),
             ]),
           ),
