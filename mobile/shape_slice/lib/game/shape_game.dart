@@ -418,15 +418,21 @@ class ShapeGame extends ChangeNotifier {
     if (busy) return;
     busy = true;
     notifyListeners();
-    line.clear();
-    cursor = 0;
-    analyses.clear();
-    feedback = null;
-    error = null;
-    pos = GoPosition(size ?? boardSize, Rules.japanese);
-    busy = false;
-    notifyListeners();
-    await start();
+    try {
+      line.clear();
+      cursor = 0;
+      analyses.clear();
+      feedback = null;
+      error = null;
+      pos = GoPosition(size ?? boardSize, Rules.japanese);
+      await _analyzeCurrent();
+    } catch (e) {
+      error = '$e';
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+    await _maybeOpponentMove();
   }
 
   Future<void> setFeedbackMode(FeedbackMode mode) async {

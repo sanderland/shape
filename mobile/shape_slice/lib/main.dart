@@ -6,6 +6,7 @@
 // through ONNX Runtime.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'board_painter.dart';
 import 'engine/analysis.dart';
@@ -13,7 +14,11 @@ import 'game/shape_game.dart';
 
 const kModelAsset = 'assets/b18c384nbt-humanv0.onnx';
 
-void main() => runApp(const ShapeApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  runApp(const ShapeApp());
+}
 
 class ShapeApp extends StatelessWidget {
   const ShapeApp({super.key});
@@ -37,6 +42,8 @@ class _HomePageState extends State<HomePage> {
   Object? loadError;
   String status = 'loading model…';
   bool benchmarking = false;
+  final ScrollController _panelController = ScrollController();
+  MoveFeedback? _lastFeedback;
 
   @override
   void initState() {
@@ -48,7 +55,7 @@ class _HomePageState extends State<HomePage> {
     try {
       final engine = await ShapeEngine.load(kModelAsset);
       final g = ShapeGame(engine, boardSize: 19);
-      g.addListener(() => setState(() {}));
+      g.addListener(_onGameChanged);
       setState(() {
         game = g;
         status = 'analyzing…';
@@ -59,6 +66,36 @@ class _HomePageState extends State<HomePage> {
       debugPrint('$e\n$st');
       setState(() => loadError = e);
     }
+  }
+
+  void _onGameChanged() {
+    if (!mounted) return;
+    final g = game;
+    final feedback = g?.feedback;
+    final revealFeedback = g != null &&
+        feedback != null &&
+        !identical(feedback, _lastFeedback) &&
+        (g.feedbackMode == FeedbackMode.all ||
+            (g.feedbackMode == FeedbackMode.mistakesOnly && feedback.isMistake));
+    _lastFeedback = feedback;
+    setState(() {});
+    if (revealFeedback) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_panelController.hasClients) return;
+        _panelController.animateTo(
+          _panelController.position.minScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    game?.removeListener(_onGameChanged);
+    _panelController.dispose();
+    super.dispose();
   }
 
   PolicyData? get _overlayPolicy {
@@ -94,7 +131,7 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    final navEnabled = !g.busy;
+    final navEnabled = !g.busy && !benchmarking;
     return Scaffold(
       appBar: AppBar(
         title: const Text('SHAPE'),
@@ -127,7 +164,12 @@ class _HomePageState extends State<HomePage> {
           children: [
             _board(g),
             if (g.busy) const LinearProgressIndicator(minHeight: 2),
-            Expanded(child: SingleChildScrollView(child: _panel(g))),
+            Expanded(
+              child: SingleChildScrollView(
+                controller: _panelController,
+                child: _panel(g),
+              ),
+            ),
           ],
         ),
       ),
@@ -154,8 +196,8 @@ class _HomePageState extends State<HomePage> {
             );
             return GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTapDown: (d) {
-                if (g.busy || !g.humanToPlay || g.gameOver) return;
+              onTapUp: (d) {
+                if (g.busy || benchmarking || !g.humanToPlay || g.gameOver) return;
                 final p = geom.hit(d.localPosition);
                 if (p != null) g.playAt(p.$1, p.$2);
               },
@@ -176,6 +218,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _panel(ShapeGame g) {
+    final controlsEnabled = !g.busy && !benchmarking;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
       child: Column(
@@ -186,12 +229,21 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 8),
           ],
           Row(children: [
-            Expanded(child: _rankPicker('Your rank', g.playerRank, (v) => g.setRanks(player: v))),
+            Expanded(child: _rankPicker(
+              'Your rank', g.playerRank, (v) => g.setRanks(player: v),
+              enabled: controlsEnabled,
+            )),
             const SizedBox(width: 8),
-            Expanded(child: _rankPicker('Aiming at', g.targetRank, (v) => g.setRanks(target: v))),
+            Expanded(child: _rankPicker(
+              'Aiming at', g.targetRank, (v) => g.setRanks(target: v),
+              enabled: controlsEnabled,
+            )),
           ]),
           const SizedBox(height: 4),
-          _rankPicker('Opponent', g.opponentRank, (v) => g.setRanks(opponent: v)),
+          _rankPicker(
+            'Opponent', g.opponentRank, (v) => g.setRanks(opponent: v),
+            enabled: controlsEnabled,
+          ),
           const SizedBox(height: 8),
           _labelled('Feedback after your move', SegmentedButton<FeedbackMode>(
             segments: const [
@@ -200,7 +252,8 @@ class _HomePageState extends State<HomePage> {
               ButtonSegment(value: FeedbackMode.all, label: Text('Every move')),
             ],
             selected: {g.feedbackMode},
-            onSelectionChanged: (s) => g.setFeedbackMode(s.first),
+            onSelectionChanged:
+                controlsEnabled ? (s) => g.setFeedbackMode(s.first) : null,
           )),
           const SizedBox(height: 6),
           _labelled('Show the policy before you move', SegmentedButton<HeatmapMode>(
@@ -210,13 +263,16 @@ class _HomePageState extends State<HomePage> {
               ButtonSegment(value: HeatmapMode.target, label: Text('Target')),
             ],
             selected: {g.heatmapMode},
-            onSelectionChanged: (s) => g.setHeatmapMode(s.first),
+            onSelectionChanged:
+                controlsEnabled ? (s) => g.setHeatmapMode(s.first) : null,
           )),
           const SizedBox(height: 8),
           Row(children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: g.busy || g.gameOver || !g.humanToPlay ? null : g.pass,
+                onPressed: !controlsEnabled || g.gameOver || !g.humanToPlay
+                    ? null
+                    : g.pass,
                 icon: const Icon(Icons.skip_next),
                 label: const Text('Pass'),
               ),
@@ -224,7 +280,7 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(width: 8),
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: g.busy ? null : () => g.newGame(),
+                onPressed: controlsEnabled ? () => g.newGame() : null,
                 icon: const Icon(Icons.refresh),
                 label: const Text('New game'),
               ),
@@ -255,6 +311,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _benchmark(ShapeGame g) async {
+    if (benchmarking || g.busy) return;
     setState(() => benchmarking = true);
     List<ProviderTiming> results;
     try {
@@ -421,7 +478,12 @@ class _HomePageState extends State<HomePage> {
         ]),
       );
 
-  Widget _rankPicker(String label, String value, Future<void> Function(String) onChanged) =>
+  Widget _rankPicker(
+    String label,
+    String value,
+    Future<void> Function(String) onChanged, {
+    required bool enabled,
+  }) =>
       InputDecorator(
         decoration: InputDecoration(
           labelText: label,
@@ -436,9 +498,11 @@ class _HomePageState extends State<HomePage> {
             items: kRanks
                 .map((r) => DropdownMenuItem(value: r, child: Text(rankLabel(r))))
                 .toList(),
-            onChanged: (v) {
-              if (v != null) onChanged(v);
-            },
+            onChanged: enabled
+                ? (v) {
+                    if (v != null) onChanged(v);
+                  }
+                : null,
           ),
         ),
       );

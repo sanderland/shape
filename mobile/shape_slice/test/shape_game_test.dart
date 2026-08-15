@@ -4,6 +4,7 @@
 // branch, and an opponent that could never pass -- plus the caching claim that
 // browsing history does no work.
 
+import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -32,6 +33,7 @@ class FakeAnalyzer implements Analyzer {
   int calls = 0;
   final List<int> analyzedMoveCounts = [];
   final List<List<String>> analyzedProfiles = [];
+  Completer<void>? blockNextAnalysis;
 
   /// Policy to hand back; defaults to a flat board policy with no pass.
   PolicyData Function(GoPosition pos)? policyFor;
@@ -39,6 +41,9 @@ class FakeAnalyzer implements Analyzer {
   @override
   Future<Map<String, ProfileAnalysis>> analyze(
       GoPosition pos, List<String> profiles) async {
+    final blocker = blockNextAnalysis;
+    blockNextAnalysis = null;
+    if (blocker != null) await blocker.future;
     calls += 1;
     analyzedMoveCounts.add(pos.moves.length);
     analyzedProfiles.add(List.of(profiles));
@@ -208,6 +213,27 @@ void main() {
     await g.playAt(2, 2); // occupied
     expect(g.line.length, len);
     expect(g.error, isNotNull);
+  });
+
+  test('new game stays busy until its initial analysis finishes', () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake);
+    await g.start();
+    await g.playAt(2, 2);
+
+    final blocker = Completer<void>();
+    fake.blockNextAnalysis = blocker;
+    final reset = g.newGame();
+
+    expect(g.busy, isTrue);
+    await g.playAt(4, 4);
+    expect(g.line, isEmpty,
+        reason: 'moves must stay disabled during startup analysis');
+
+    blocker.complete();
+    await reset;
+    expect(g.busy, isFalse);
+    expect(g.line, isEmpty);
   });
 }
 
