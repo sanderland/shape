@@ -22,6 +22,11 @@ ASSETS = HERE / "assets"
 ONNX = Path.home() / ".katrain/b18c384nbt-humanv0.onnx"
 MNN_MODEL = HERE / "humanv0.mnn"
 
+
+def gtp(i: int) -> str:
+    return "pass" if i == 361 else f"{'ABCDEFGHJKLMNOPQRST'[i % 19]}{19 - i // 19}"
+
+
 IN_NAMES = ["bin_input", "global_input", "input_meta"]
 OUT_NAMES = ["policy", "value", "lead"]
 
@@ -64,7 +69,6 @@ def main():
         oi, mi = int(np.argmax(o)), int(np.argmax(m))
         if oi != mi:
             mismatches += 1
-        gtp = lambda i: "pass" if i == 361 else f"{'ABCDEFGHJKLMNOPQRST'[i % 19]}{19 - i // 19}"
         print(f"{name:<14}{gtp(oi):>9}{gtp(mi):>9}{diff:>14.2e}{abs(float(o_lead[0]) - m_lead):>9.3f}")
 
     print(f"\nworst policy diff {worst:.3e}, top-1 mismatches {mismatches}/{len(ref['profiles'])}")
