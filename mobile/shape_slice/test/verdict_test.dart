@@ -11,7 +11,7 @@ MoveFeedback fb({
   required double targetProb,
   required double? pointsLost,
 }) {
-  final mlt = targetProb / ((playerProb + targetProb).clamp(1e-10, double.infinity));
+  final mlt = posteriorLikeTarget(playerProb, targetProb);
   return MoveFeedback(
     x: 3,
     y: 3,
@@ -70,6 +70,38 @@ void main() {
     final f = fb(playerProb: 0.01, targetProb: 0.001, pointsLost: null);
     expect(f.costly, isFalse);
     expect(f.verdict, isNot(MoveVerdict.mistake));
+  });
+
+  test('a move both ranks like equally is NOT praised', () {
+    // The bug this pins: the praise boundary used to sit at 0.5, which is the
+    // point of no evidence, so ~39% of the moves a 5k genuinely plays were
+    // labelled "above your level".
+    final even = fb(playerProb: 0.10, targetProb: 0.105, pointsLost: 0.1);
+    expect(even.moveLikeTarget, closeTo(0.512, 0.01));
+    expect(even.verdict, MoveVerdict.typical);
+  });
+
+  test('praise needs the target to be ~twice as likely', () {
+    final justUnder = fb(playerProb: 0.10, targetProb: 0.18, pointsLost: 0.1);
+    expect(justUnder.verdict, MoveVerdict.typical);
+
+    final clear = fb(playerProb: 0.05, targetProb: 0.20, pointsLost: 0.1);
+    expect(clear.moveLikeTarget, greaterThan(kAboveTargetThreshold));
+    expect(clear.verdict, MoveVerdict.aboveYourLevel);
+  });
+
+  test('a move neither rank plays is never praised', () {
+    // 3:1 ratio, but on probabilities nobody would call a move.
+    final f = fb(playerProb: 0.001, targetProb: 0.003, pointsLost: 0.1);
+    expect(f.isRare, isTrue);
+    expect(f.verdict, MoveVerdict.typical);
+  });
+
+  test('the posterior floor stops vanishing probabilities faking confidence', () {
+    // Unfloored this is 0.917; floored, both sides sit at the floor -> 0.5.
+    expect(posteriorLikeTarget(0.000001, 0.000011), closeTo(0.5, 0.01));
+    // Real probabilities are untouched by the floor.
+    expect(posteriorLikeTarget(0.05, 0.20), closeTo(0.8, 0.001));
   });
 
   test('threshold constants match desktop SHAPE defaults', () {

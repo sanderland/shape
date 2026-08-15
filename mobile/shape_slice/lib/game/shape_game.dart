@@ -31,6 +31,31 @@ const double kMistakeSizePoints = 1.0;
 const double kTargetRankThreshold = 0.20;
 const double kMaxProbThreshold = 0.01;
 
+/// Posterior needed to call a move "above your level" — 0.667, i.e. the target
+/// rank is twice as likely to play it as your rank.
+///
+/// This was 0.5, which is the point of *no evidence*: a move both ranks like
+/// equally cleared it. Calibrated over 80 positions of realistic rank_5k
+/// self-play (tools/onnx_export/calibrate_verdict.py), player 5k / target 2d,
+/// showing the fraction of moves each rank would really play that clear a
+/// given threshold:
+///
+///   threshold   flags 5k moves   flags 2d moves   lift
+///   0.50             38.8%            75.0%       1.94   <- was here
+///   0.60              7.5%            43.8%       5.83
+///   0.667             2.5%            26.2%      10.50   <- now here
+///
+/// At 0.5 nearly two in five of the player's own ordinary moves were praised.
+const double kAboveTargetThreshold = 0.667;
+
+/// Probabilities below this are treated as equal when forming the posterior.
+///
+/// Without it, target 0.0011% against player 0.0001% reports "91% like your
+/// target" — a confident rank read on a move neither rank would ever play.
+/// Note this is a tail guard only: it does not move the numbers above, because
+/// moves people actually play are never that unlikely.
+const double kPolicyFloor = 0.0005;
+
 String rankLabel(String profile) {
   if (profile.startsWith('rank_')) return profile.substring(5);
   if (profile.startsWith('proyear_')) return 'pro ${profile.substring(8)}';
@@ -39,6 +64,21 @@ String rankLabel(String profile) {
 }
 
 enum MoveVerdict { mistake, aboveYourLevel, typical }
+
+/// How much of the post-move card to show. Independent of [HeatmapMode]: the
+/// heatmap tells you what to play *before* you move, this judges it after.
+enum FeedbackMode { off, mistakesOnly, all }
+
+/// Which policy, if any, to paint on the board before you move.
+enum HeatmapMode { off, yourRank, target }
+
+/// P(target rank | move) under a two-hypothesis prior, with both probabilities
+/// floored so vanishing policy values cannot manufacture a confident read.
+double posteriorLikeTarget(double playerProb, double targetProb) {
+  final p = math.max(playerProb, kPolicyFloor);
+  final t = math.max(targetProb, kPolicyFloor);
+  return t / (p + t);
+}
 
 /// How the move just played looks to each rank.
 class MoveFeedback {
@@ -77,7 +117,11 @@ class MoveFeedback {
     if (costly && (isRare || moveLikeTarget < kTargetRankThreshold)) {
       return MoveVerdict.mistake;
     }
-    if (moveLikeTarget >= 0.5) return MoveVerdict.aboveYourLevel;
+    // Don't praise a move neither rank actually plays: a 0.3% vs 0.1% split is a
+    // 3:1 ratio but says nothing useful.
+    if (!isRare && moveLikeTarget >= kAboveTargetThreshold) {
+      return MoveVerdict.aboveYourLevel;
+    }
     return MoveVerdict.typical;
   }
 
@@ -104,9 +148,17 @@ class ShapeGame extends ChangeNotifier {
   int humanColor = Board.black;
   bool autoplayOpponent = true;
 
-  /// When off, only the opponent's profile is evaluated: no heatmap, no feedback,
-  /// and one net call per position instead of two or three.
-  bool hintsEnabled = true;
+  FeedbackMode feedbackMode = FeedbackMode.all;
+  HeatmapMode heatmapMode = HeatmapMode.target;
+
+  /// Profile whose policy the board paints, or null when the heatmap is off.
+  String? get heatmapProfile => switch (heatmapMode) {
+        HeatmapMode.off => null,
+        HeatmapMode.yourRank => playerRank,
+        HeatmapMode.target => targetRank,
+      };
+
+  bool get wantsFeedback => feedbackMode != FeedbackMode.off;
 
   /// Sampler settings, matching SHAPE's defaults.
   int topK = 50;
@@ -123,26 +175,31 @@ class ShapeGame extends ChangeNotifier {
     pos = GoPosition(boardSize, Rules.japanese);
   }
 
-  /// Profiles to evaluate at the current position. Kept as small as the position's
-  /// role allows, because each profile is a full net call (~250ms on a phone):
+  /// Profiles to evaluate at the current position, kept as small as its role
+  /// allows: each one is a full net call (~250ms on a phone).
   ///
-  /// - hints off: only the opponent needs a policy to sample from.
-  /// - opponent about to reply at the tip: the position is transient (the reply
-  ///   lands moments later), so evaluate only what that moment needs -- the
-  ///   opponent's policy to sample from, and the reference lead for points-lost.
-  ///   The player/target heatmap is skipped here; navigating back to such a
-  ///   position later fills it lazily via [_analyze]'s cache-miss path.
-  /// - anywhere else: player + target (feedback and heatmap) + reference (lead).
-  ///   The opponent's policy is not needed where the opponent isn't moving; if it
-  ///   ever is, [_maybeOpponentMove] requests it explicitly before sampling.
+  /// A position where the opponent is about to reply is transient -- the reply
+  /// lands moments later -- so it only needs what that moment uses: the
+  /// opponent's policy to sample from, and the reference lead so points-lost can
+  /// be computed for the move just played. Player/target there would only feed a
+  /// heatmap nobody sees, and fill in lazily if you browse back.
   ///
-  /// Net effect with hints on: a full exchange costs 2 + 3 evals instead of 4 + 4.
+  /// Turning both feedback and the heatmap off drops a full exchange to a single
+  /// evaluation. "Mistakes only" costs the same as "all": you cannot know a move
+  /// was a mistake without evaluating it.
   List<String> get activeProfiles {
-    if (!hintsEnabled) return {opponentRank}.toList();
-    if (autoplayOpponent && atTip && !humanToPlay && !gameOver) {
-      return {opponentRank, kReferenceProfile}.toList();
+    final transient = autoplayOpponent && atTip && !humanToPlay && !gameOver;
+    final needed = <String>{};
+    if (transient) needed.add(opponentRank);
+    if (wantsFeedback) {
+      needed.add(kReferenceProfile);
+      if (!transient) needed.addAll([playerRank, targetRank]);
     }
-    return {playerRank, targetRank, kReferenceProfile}.toList();
+    if (!transient) {
+      final hm = heatmapProfile;
+      if (hm != null) needed.add(hm);
+    }
+    return needed.toList();
   }
 
   /// Profiles needed to describe a move already played (no opponent sampling).
@@ -213,7 +270,7 @@ class ShapeGame extends ChangeNotifier {
   /// Describe the move that produced the current position, if it was the human's.
   Future<void> _updateFeedback() async {
     feedback = null;
-    if (!hintsEnabled || cursor == 0) return;
+    if (!wantsFeedback || cursor == 0) return;
     final move = line[cursor - 1];
     if (move.pla != humanColor || move.isPass) return;
 
@@ -242,7 +299,7 @@ class ShapeGame extends ChangeNotifier {
       playerRel: pRel,
       targetProb: tProb,
       targetRel: tRel,
-      moveLikeTarget: tProb / math.max(pProb + tProb, 1e-10),
+      moveLikeTarget: posteriorLikeTarget(pProb, tProb),
       pointsLost: _pointsLost(beforeIdx, wasPass: false),
     );
   }
@@ -372,20 +429,27 @@ class ShapeGame extends ChangeNotifier {
     await start();
   }
 
-  Future<void> setHints(bool enabled) async {
-    if (hintsEnabled == enabled) return;
-    hintsEnabled = enabled;
+  Future<void> setFeedbackMode(FeedbackMode mode) async {
+    if (feedbackMode == mode) return;
+    feedbackMode = mode;
+    if (!wantsFeedback) feedback = null;
+    await _refresh();
+  }
+
+  Future<void> setHeatmapMode(HeatmapMode mode) async {
+    if (heatmapMode == mode) return;
+    heatmapMode = mode;
+    await _refresh();
+  }
+
+  Future<void> _refresh() async {
     notifyListeners();
     if (busy) return;
     busy = true;
     notifyListeners();
     try {
-      if (enabled) {
-        await _analyzeCurrent();
-        await _updateFeedback();
-      } else {
-        feedback = null;
-      }
+      await _analyzeCurrent();
+      await _updateFeedback();
     } finally {
       busy = false;
       notifyListeners();

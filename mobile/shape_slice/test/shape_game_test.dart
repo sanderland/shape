@@ -145,16 +145,34 @@ void main() {
     expect(g.gameOver, isTrue);
   });
 
-  test('hints off evaluates only the opponent profile', () async {
+  test('feedback and heatmap are independent, and each costs evals', () async {
     final fake = FakeAnalyzer();
-    final g = newGame(fake);
-    await g.setHints(false);
-    expect(g.activeProfiles, [g.opponentRank]);
+    final g = newGame(fake, autoplay: true);
+
+    // Everything off: a human-to-move position needs nothing at all.
+    await g.setFeedbackMode(FeedbackMode.off);
+    await g.setHeatmapMode(HeatmapMode.off);
+    expect(g.activeProfiles, isEmpty);
     expect(g.feedback, isNull);
 
-    await g.setHints(true);
-    expect(g.activeProfiles.length, greaterThan(1));
-    expect(g.activeProfiles, contains(kReferenceProfile));
+    // Heatmap alone pulls in exactly the painted profile, not the feedback set.
+    await g.setHeatmapMode(HeatmapMode.target);
+    expect(g.activeProfiles, [g.targetRank]);
+
+    await g.setHeatmapMode(HeatmapMode.yourRank);
+    expect(g.activeProfiles, [g.playerRank]);
+
+    // Feedback alone needs player + target + the score reference, heatmap or not.
+    await g.setHeatmapMode(HeatmapMode.off);
+    await g.setFeedbackMode(FeedbackMode.all);
+    expect(g.activeProfiles.toSet(),
+        {g.playerRank, g.targetRank, kReferenceProfile});
+
+    // Mistakes-only is a display choice: it cannot be cheaper, since you must
+    // evaluate a move to learn whether it was a mistake.
+    final withAll = g.activeProfiles.toSet();
+    await g.setFeedbackMode(FeedbackMode.mistakesOnly);
+    expect(g.activeProfiles.toSet(), withAll);
   });
 
   test('a full exchange evaluates 2 + 3 profiles, not 4 + 4', () async {

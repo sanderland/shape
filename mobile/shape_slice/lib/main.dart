@@ -26,8 +26,6 @@ class ShapeApp extends StatelessWidget {
       );
 }
 
-enum HintMode { off, yourRank, target }
-
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
   @override
@@ -38,7 +36,6 @@ class _HomePageState extends State<HomePage> {
   ShapeGame? game;
   Object? loadError;
   String status = 'loading model…';
-  HintMode hints = HintMode.target;
   bool benchmarking = false;
 
   @override
@@ -66,9 +63,9 @@ class _HomePageState extends State<HomePage> {
 
   PolicyData? get _overlayPolicy {
     final g = game;
-    if (g == null || hints == HintMode.off) return null;
-    final profile = hints == HintMode.yourRank ? g.playerRank : g.targetRank;
-    return g.analysisFor(profile)?.policy;
+    final profile = g?.heatmapProfile;
+    if (profile == null) return null;
+    return g!.analysisFor(profile)?.policy;
   }
 
   @override
@@ -184,7 +181,7 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (hints != HintMode.off) ...[
+          if (_showCard(g)) ...[
             _feedbackCard(g),
             const SizedBox(height: 8),
           ],
@@ -196,18 +193,25 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 4),
           _rankPicker('Opponent', g.opponentRank, (v) => g.setRanks(opponent: v)),
           const SizedBox(height: 8),
-          SegmentedButton<HintMode>(
+          _labelled('Feedback after your move', SegmentedButton<FeedbackMode>(
             segments: const [
-              ButtonSegment(value: HintMode.off, label: Text('No hints')),
-              ButtonSegment(value: HintMode.yourRank, label: Text('Your rank')),
-              ButtonSegment(value: HintMode.target, label: Text('Target')),
+              ButtonSegment(value: FeedbackMode.off, label: Text('Off')),
+              ButtonSegment(value: FeedbackMode.mistakesOnly, label: Text('Mistakes')),
+              ButtonSegment(value: FeedbackMode.all, label: Text('Every move')),
             ],
-            selected: {hints},
-            onSelectionChanged: (s) {
-              setState(() => hints = s.first);
-              g.setHints(hints != HintMode.off);
-            },
-          ),
+            selected: {g.feedbackMode},
+            onSelectionChanged: (s) => g.setFeedbackMode(s.first),
+          )),
+          const SizedBox(height: 6),
+          _labelled('Show the policy before you move', SegmentedButton<HeatmapMode>(
+            segments: const [
+              ButtonSegment(value: HeatmapMode.off, label: Text('Off')),
+              ButtonSegment(value: HeatmapMode.yourRank, label: Text('Your rank')),
+              ButtonSegment(value: HeatmapMode.target, label: Text('Target')),
+            ],
+            selected: {g.heatmapMode},
+            onSelectionChanged: (s) => g.setHeatmapMode(s.first),
+          )),
           const SizedBox(height: 8),
           Row(children: [
             Expanded(
@@ -296,6 +300,25 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
+
+  /// Mistakes-only hides the card unless the move was actually flagged.
+  bool _showCard(ShapeGame g) => switch (g.feedbackMode) {
+        FeedbackMode.off => false,
+        FeedbackMode.all => true,
+        FeedbackMode.mistakesOnly => g.feedback?.isMistake ?? false,
+      };
+
+  Widget _labelled(String label, Widget child) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 3),
+            child: Text(label,
+                style: const TextStyle(fontSize: 11, color: Colors.black54)),
+          ),
+          child,
+        ],
+      );
 
   Widget _feedbackCard(ShapeGame g) {
     final fb = g.feedback;
