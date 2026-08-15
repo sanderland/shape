@@ -154,17 +154,25 @@ class ShapeGame extends ChangeNotifier {
     await _maybeOpponentMove();
   }
 
-  Future<void> _analyze(int idx, GoPosition p, List<String> profiles) async {
+  /// Analyze position [idx] for [profiles], skipping anything already cached.
+  ///
+  /// The position is built lazily: replaying the line to rebuild it is not free,
+  /// and browsing history is almost always a pure cache hit.
+  Future<void> _analyze(
+    int idx,
+    GoPosition Function() buildPosition,
+    List<String> profiles,
+  ) async {
     final want =
         profiles.where((x) => !(analyses[idx]?.containsKey(x) ?? false)).toList();
     if (want.isEmpty) return;
     final sw = Stopwatch()..start();
-    final result = await engine.analyze(p, want);
+    final result = await engine.analyze(buildPosition(), want);
     analysisMs = sw.elapsedMilliseconds;
     (analyses[idx] ??= {}).addAll(result);
   }
 
-  Future<void> _analyzeCurrent() => _analyze(cursor, pos, activeProfiles);
+  Future<void> _analyzeCurrent() => _analyze(cursor, () => pos, activeProfiles);
 
   /// Points the side that just moved gave up, per the reference profile.
   ///
@@ -192,18 +200,19 @@ class ShapeGame extends ChangeNotifier {
     if (move.pla != humanColor || move.isPass) return;
 
     final beforeIdx = cursor - 1;
-    // Browsing back to an old move may land on a position we never evaluated.
-    await _analyze(beforeIdx, _positionAt(beforeIdx), _feedbackProfiles);
-    await _analyze(cursor, pos, _feedbackProfiles);
+    // Normally both are already cached from when they were played; this only does
+    // work if hints were off then, or the ranks changed since.
+    await _analyze(beforeIdx, () => _positionAt(beforeIdx), _feedbackProfiles);
+    await _analyze(cursor, () => pos, _feedbackProfiles);
 
     final before = analyses[beforeIdx];
     final player = before?[playerRank];
     final target = before?[targetRank];
     if (player == null || target == null) return;
 
-    final board = _positionAt(beforeIdx).board;
-    final x = board.locX(move.loc);
-    final y = board.locY(move.loc);
+    // loc encodes x/y purely from board width, so the current board decodes it.
+    final x = pos.board.locX(move.loc);
+    final y = pos.board.locY(move.loc);
     final (pProb, pRel) = player.policy.at(x, y);
     final (tProb, tRel) = target.policy.at(x, y);
     feedback = MoveFeedback(
@@ -261,7 +270,7 @@ class ShapeGame extends ChangeNotifier {
     busy = true;
     notifyListeners();
     try {
-      await _analyze(cursor, pos, [opponentRank]);
+      await _analyze(cursor, () => pos, [opponentRank]);
       final analysis = analyses[cursor]?[opponentRank];
       if (analysis != null) {
         final candidates = analysis.policy.sample(topK: topK, topP: topP, minP: minP);
@@ -377,14 +386,13 @@ class ShapeGame extends ChangeNotifier {
     final b = StringBuffer('(;GM[1]FF[4]CA[UTF-8]SZ[$boardSize]KM[6.5]RU[Japanese]');
     b.write('PB[${humanColor == Board.black ? rankLabel(playerRank) : rankLabel(opponentRank)}]');
     b.write('PW[${humanColor == Board.white ? rankLabel(playerRank) : rankLabel(opponentRank)}]');
-    final full = _positionAt(0).board;
     for (final m in line) {
       final tag = m.pla == Board.black ? 'B' : 'W';
       if (m.isPass) {
         b.write(';$tag[]');
       } else {
-        final x = full.locX(m.loc);
-        final y = full.locY(m.loc);
+        final x = pos.board.locX(m.loc);
+        final y = pos.board.locY(m.loc);
         b.write(';$tag[${String.fromCharCode(97 + x)}${String.fromCharCode(97 + y)}]');
       }
     }

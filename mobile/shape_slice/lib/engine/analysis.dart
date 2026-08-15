@@ -101,17 +101,99 @@ class ProfileAnalysis {
   ProfileAnalysis(this.policy, this.lead, this.winrate);
 }
 
+/// How one execution provider performed, for the in-app benchmark.
+class ProviderTiming {
+  final String provider;
+  final int? msPerEval;
+  final String? error;
+  const ProviderTiming(this.provider, this.msPerEval, this.error);
+  bool get ok => msPerEval != null;
+}
+
 /// Runs the human-SL net on device.
 class ShapeEngine {
   final OrtSession session;
   final Features features;
   final int posLen;
 
-  ShapeEngine(this.session, this.posLen) : features = Features(posLen);
+  /// Which execution provider initialised. Note this is only the provider ORT
+  /// *accepted*: NNAPI partitions the graph and silently runs unsupported ops on
+  /// CPU, so this being "NNAPI" does not by itself mean the NPU did the work.
+  /// Latency is the only real evidence -- see [benchmarkProviders].
+  final String provider;
 
-  static Future<ShapeEngine> load(String assetPath, {int posLen = 19}) async {
-    final session = await OnnxRuntime().createSessionFromAsset(assetPath);
-    return ShapeEngine(session, posLen);
+  ShapeEngine(this.session, this.posLen, this.provider) : features = Features(posLen);
+
+  /// Preference order on Android: NNAPI (NPU/GPU), then XNNPACK (optimised CPU),
+  /// then plain CPU.
+  static const List<OrtProvider> preferredProviders = [
+    OrtProvider.NNAPI,
+    OrtProvider.XNNPACK,
+    OrtProvider.CPU,
+  ];
+
+  static Future<ShapeEngine> load(
+    String assetPath, {
+    int posLen = 19,
+    List<OrtProvider>? prefer,
+  }) async {
+    Object? lastError;
+    for (final p in prefer ?? preferredProviders) {
+      try {
+        final session = await OnnxRuntime().createSessionFromAsset(
+          assetPath,
+          options: OrtSessionOptions(providers: [p]),
+        );
+        return ShapeEngine(session, posLen, p.name);
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    throw StateError('no execution provider could load the model: $lastError');
+  }
+
+  /// Time each provider on [pos], creating and closing a session per provider.
+  ///
+  /// Deliberately measures rather than trusts: an NNAPI session that falls back to
+  /// CPU for most ops looks identical to a working one until you time it.
+  static Future<List<ProviderTiming>> benchmarkProviders(
+    String assetPath,
+    GoPosition pos, {
+    int posLen = 19,
+    int reps = 3,
+    String profile = 'rank_5k',
+  }) async {
+    final out = <ProviderTiming>[];
+
+    // Featurization is pure Dart and runs identically for every provider, so time it
+    // separately -- if the ladder search dominates, no execution provider will help.
+    final fsw = Stopwatch()..start();
+    for (var i = 0; i < reps; i++) {
+      Features(posLen).fillRowFeatures(pos);
+    }
+    out.add(ProviderTiming('featurizer (Dart)', fsw.elapsedMilliseconds ~/ reps, null));
+
+    for (final p in preferredProviders) {
+      OrtSession? session;
+      try {
+        session = await OnnxRuntime().createSessionFromAsset(
+          assetPath,
+          options: OrtSessionOptions(providers: [p]),
+        );
+        final engine = ShapeEngine(session, posLen, p.name);
+        await engine.analyze(pos, [profile]); // warm up
+        final sw = Stopwatch()..start();
+        for (var i = 0; i < reps; i++) {
+          await engine.analyze(pos, [profile]);
+        }
+        out.add(ProviderTiming(p.name, sw.elapsedMilliseconds ~/ reps, null));
+      } catch (e) {
+        out.add(ProviderTiming(p.name, null, '$e'.split('\n').first));
+      } finally {
+        await session?.close();
+      }
+    }
+    return out;
   }
 
   /// Evaluate [pos] under each of [profiles].

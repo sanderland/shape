@@ -39,6 +39,7 @@ class _HomePageState extends State<HomePage> {
   Object? loadError;
   String status = 'loading model…';
   HintMode hints = HintMode.target;
+  bool benchmarking = false;
 
   @override
   void initState() {
@@ -231,11 +232,64 @@ class _HomePageState extends State<HomePage> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('move ${g.cursor}/${g.line.length}   '
                   '${g.gameOver ? "game over" : (g.humanToPlay ? "your turn" : "opponent…")}   '
-                  '${g.analysisMs} ms'),
+                  '${g.analysisMs} ms   ${g.engine.provider}'),
               if (g.error != null)
                 Text(g.error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
             ]),
           ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: g.busy || benchmarking ? null : () => _benchmark(g),
+              icon: const Icon(Icons.speed, size: 18),
+              label: Text(benchmarking ? 'Benchmarking…' : 'Benchmark providers'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _benchmark(ShapeGame g) async {
+    setState(() => benchmarking = true);
+    List<ProviderTiming> results;
+    try {
+      results = await ShapeEngine.benchmarkProviders(kModelAsset, g.pos);
+    } catch (e) {
+      results = [ProviderTiming('benchmark failed', null, '$e')];
+    }
+    if (!mounted) return;
+    setState(() => benchmarking = false);
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Per-eval time'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final r in results)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Text(
+                  r.ok ? '${r.provider.padRight(18)} ${r.msPerEval} ms' : '${r.provider}: ${r.error}',
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    color: r.ok ? Colors.black87 : Colors.red,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 8),
+            const Text(
+              'A provider can accept the model and still run most ops on CPU, so '
+              'compare the numbers rather than trusting the name.',
+              style: TextStyle(fontSize: 11, color: Colors.black54),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
         ],
       ),
     );
