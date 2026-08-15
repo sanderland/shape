@@ -38,7 +38,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: out
-          key: humanv0-onnx-${{ env.KATAGO_TAG }}-${{ hashFiles('tools/onnx_export/*.py') }}
+          key: humanv0-${{ env.KATAGO_TAG }}-mnn${{ env.MNN_VERSION }}-${{ hashFiles('tools/onnx_export/*.py', '.github/workflows/mobile_apk.yml') }}
 
       - uses: actions/setup-python@v5
         if: steps.cache.outputs.cache-hit != 'true'
@@ -154,11 +154,35 @@ jobs:
         working-directory: mobile/shape_slice
         run: flutter test
 
-      - name: Build release APK (arm64)
+      - name: Check the assets the app needs are present
         working-directory: mobile/shape_slice
         run: |
           ls -la assets
-          flutter build apk --release --split-per-abi --target-platform=android-arm64
+          missing=0
+          for f in b18c384nbt-humanv0.onnx humanv0.mnn position.bin reference.json \
+                   featurizer_fixtures.json; do
+            if [ ! -s "assets/$f" ]; then echo "MISSING: assets/$f"; missing=1; fi
+          done
+          [ "$missing" = 0 ] || {
+            echo "Refusing to build: the APK would ship without these, and the failure"
+            echo "would only show up as a runtime error on the phone."
+            exit 1
+          }
+
+      - name: Build release APK (arm64)
+        working-directory: mobile/shape_slice
+        run: flutter build apk --release --split-per-abi --target-platform=android-arm64
+
+      - name: Confirm the assets made it into the APK
+        working-directory: mobile/shape_slice
+        run: |
+          apk=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          for f in b18c384nbt-humanv0.onnx humanv0.mnn; do
+            unzip -l "$apk" | grep -q "flutter_assets/assets/$f" \
+              || { echo "MISSING FROM APK: $f"; exit 1; }
+          done
+          unzip -l "$apk" | grep -E "flutter_assets/assets/(.*onnx|.*mnn)"
+          unzip -l "$apk" | grep -c "lib/arm64-v8a/libMNN" 
 
       - uses: actions/upload-artifact@v4
         id: upload
