@@ -11,11 +11,10 @@ moveLikeTarget actually lands for:
 A usable threshold has to separate those two.
 """
 
-import numpy as np
-import onnxruntime as ort
 from pathlib import Path
 
-from katago.game.board import Board
+import numpy as np
+import onnxruntime as ort
 from katago.game.features import Features
 from katago.game.gamestate import GameState
 from katago.train.load_model import load_model
@@ -87,7 +86,7 @@ def main():
     state = GameState(19, GameState.RULES_JAPANESE)
     played, target_like = [], []
 
-    for i in range(GAME_MOVES):
+    for _ in range(GAME_MOVES):
         pol_p = policy_of(sess, feats, state, PLAYER)
         pol_t = policy_of(sess, feats, state, TARGET)
 
