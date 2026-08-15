@@ -79,4 +79,7 @@ class MnnRunner {
   }
 
   static Future<void> release() => _channel.invokeMethod<void>('release');
+
+  static Future<String> cacheDir() async =>
+      (await _channel.invokeMethod<String>('cacheDir'))!;
 }

@@ -13,9 +13,56 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 
+import 'dart:io';
+
 import 'analysis.dart';
 import 'features.dart';
 import 'mnn.dart';
+
+/// A running log of the benchmark, flushed to disk as it goes.
+///
+/// A native crash in a backend kills the process outright -- no Dart or Kotlin
+/// catch can contain it -- taking the dialog and every result already measured
+/// with it. Appending each row and each step as it happens means a crash costs
+/// only the step it died on, and the next run reports both.
+class _Journal {
+  static File? _file;
+  static final List<String> _lines = [];
+
+  static Future<void> init() async {
+    try {
+      _file = File('${await MnnRunner.cacheDir()}/benchmark_journal.txt');
+    } catch (_) {
+      _file = null;
+    }
+  }
+
+  static void append(String line) {
+    _lines.add(line);
+    try {
+      _file?.writeAsStringSync(_lines.join('\n'), flush: true);
+    } catch (_) {}
+  }
+
+  /// What the previous run managed before dying, if it died.
+  static List<String> takePrevious() {
+    try {
+      final f = _file;
+      if (f == null || !f.existsSync()) return const [];
+      final lines = f.readAsStringSync().split('\n').where((l) => l.isNotEmpty).toList();
+      f.deleteSync();
+      return lines;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static void finish() {
+    try {
+      if (_file?.existsSync() ?? false) _file!.deleteSync();
+    } catch (_) {}
+  }
+}
 
 const String kOnnxAsset = 'assets/b18c384nbt-humanv0.onnx';
 const String kMnnAsset = 'assets/humanv0.mnn';
@@ -124,6 +171,15 @@ Future<List<BenchRow>> runBenchmark({
   final rows = <BenchRow>[];
   final features = FeatureResult(ref.bin, ref.global);
 
+  await _Journal.init();
+  final previous = _Journal.takePrevious();
+  if (previous.isNotEmpty) {
+    rows.add(BenchRow('PREVIOUS RUN CRASHED', error: 'got as far as: ${previous.last}'));
+    for (final line in previous.where((l) => l.contains('ms'))) {
+      rows.add(BenchRow('  (prev) $line'));
+    }
+  }
+
   // --- ONNX Runtime ---
   Future<void> ortRow(String label, OrtSessionOptions options, {int batch = 1}) async {
     OrtSession? session;
@@ -131,10 +187,13 @@ Future<List<BenchRow>> runBenchmark({
       session = await OnnxRuntime().createSessionFromAsset(kOnnxAsset, options: options);
       final engine = ShapeEngine(session, posLen, label)..useBatchedAnalysis = batch > 1;
       final metas = List.filled(batch, ref.meta);
-      rows.add(await _row(label, ref, reps, () async {
+      _Journal.append('$label: starting');
+      final row = await _row(label, ref, reps, () async {
         final out = await engine.runRaw(features, metas, 19);
         return out.first.policy.data.toList();
-      }));
+      });
+      rows.add(row);
+      _Journal.append('$label ${row.msPerEval} ms ${row.status}');
     } catch (e) {
       rows.add(BenchRow(label, error: '$e'.split('\n').first));
     } finally {
@@ -153,17 +212,23 @@ Future<List<BenchRow>> runBenchmark({
   // --- MNN: the reason this file exists ---
   for (final backend in MnnBackend.values) {
     try {
+      _Journal.append('${backend.label}: loading model');
       await MnnRunner.load(kMnnAsset, backend);
-      rows.add(await _row(backend.label, ref, reps, () async {
+      _Journal.append('${backend.label}: model loaded, running inference');
+      final row = await _row(backend.label, ref, reps, () async {
         final out = await MnnRunner.run(ref.bin, ref.global, ref.meta);
         return out['policy']!.toList();
-      }));
+      });
+      rows.add(row);
+      _Journal.append('${backend.label} ${row.msPerEval} ms ${row.status}');
     } catch (e) {
       rows.add(BenchRow(backend.label, error: '$e'.split('\n').first));
+      _Journal.append('${backend.label}: threw');
     } finally {
       await MnnRunner.release().catchError((_) {});
     }
   }
+  _Journal.finish();
 
   return rows;
 }
