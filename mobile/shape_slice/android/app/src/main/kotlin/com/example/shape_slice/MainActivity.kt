@@ -35,9 +35,10 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 try {
                     when (call.method) {
+                        "cacheDir" -> result.success(cacheDir.absolutePath)
                         "load" -> result.success(
                             load(
-                                call.argument<String>("asset")!!,
+                                call.argument<String>("path")!!,
                                 call.argument<Int>("forwardType")!!,
                                 call.argument<Int>("numThread") ?: 4,
                             )
@@ -62,21 +63,19 @@ class MainActivity : FlutterActivity() {
             }
     }
 
-    /** Flutter assets live inside the APK; MNN needs a real path, so extract once. */
-    private fun assetFile(asset: String): File {
-        val out = File(cacheDir, asset.substringAfterLast('/'))
-        if (!out.exists() || out.length() == 0L) {
-            assets.open("flutter_assets/$asset").use { input ->
-                out.outputStream().use { input.copyTo(it) }
-            }
-        }
-        return out
-    }
-
-    private fun load(asset: String, forwardType: Int, numThread: Int): Map<String, Any> {
+    /**
+     * [path] is a real file, extracted by the Dart side via rootBundle.
+     *
+     * Extraction deliberately does NOT go through AssetManager here: opening
+     * flutter_assets/... that way returned FileNotFoundException on device even
+     * though the entry is present in the APK. rootBundle already loads the 107MB
+     * ONNX without trouble, so the Dart side writes the model out and hands over
+     * a path.
+     */
+    private fun load(path: String, forwardType: Int, numThread: Int): Map<String, Any> {
         releaseMnn()
         MNNNetNative.ensureLoaded()
-        val path = assetFile(asset).absolutePath
+        check(File(path).exists()) { "model not found at $path" }
 
         netPtr = MNNNetNative.nativeCreateNetFromFile(path)
         check(netPtr != 0L) { "MNN could not load $path" }

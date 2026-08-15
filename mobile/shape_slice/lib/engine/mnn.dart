@@ -4,6 +4,7 @@
 // phone's GPU beats its CPU requires a runtime that has one. MNN converts the
 // same ONNX model exactly (see tools/mnn/), so the comparison is like for like.
 
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
@@ -22,18 +23,44 @@ enum MnnBackend {
 class MnnRunner {
   static const MethodChannel _channel = MethodChannel('shape/mnn');
 
-  /// Loads [asset] onto [backend]. Throws if the backend is unavailable, which
-  /// is the expected outcome for a GPU the device or driver does not support.
+  /// Copies [asset] out of the bundle once, then loads it onto [backend].
+  ///
+  /// MNN needs a filesystem path, and reading the bundle from Kotlin via
+  /// AssetManager failed with FileNotFoundException on device despite the entry
+  /// being in the APK. rootBundle demonstrably works -- it is how the ONNX of the
+  /// same size gets loaded -- so extraction happens here instead.
   static Future<void> load(
     String asset,
     MnnBackend backend, {
     int numThread = 4,
   }) async {
+    final path = await _extract(asset);
     await _channel.invokeMethod<void>('load', {
-      'asset': asset,
+      'path': path,
       'forwardType': backend.forwardType,
       'numThread': numThread,
     });
+  }
+
+  static String? _cachedPath;
+
+  static Future<String> _extract(String asset) async {
+    final cached = _cachedPath;
+    if (cached != null && File(cached).existsSync()) return cached;
+
+    final dir = await _channel.invokeMethod<String>('cacheDir');
+    final file = File('$dir/${asset.split('/').last}');
+    final data = await rootBundle.load(asset);
+
+    // Re-extract if a previous run was interrupted mid-write.
+    if (!file.existsSync() || file.lengthSync() != data.lengthInBytes) {
+      await file.writeAsBytes(
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+        flush: true,
+      );
+    }
+    _cachedPath = file.path;
+    return file.path;
   }
 
   static Future<Map<String, Float32List>> run(
