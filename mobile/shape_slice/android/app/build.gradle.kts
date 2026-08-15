@@ -9,6 +9,14 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
+    // AssetManager cannot stream a large *compressed* asset, which is how the
+    // 107MB .mnn failed with FileNotFoundException while the .onnx was fine (that
+    // one is read via Dart's rootBundle, not AssetManager). Same reason TFLite
+    // projects always set this.
+    androidResources {
+        noCompress += listOf("mnn")
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

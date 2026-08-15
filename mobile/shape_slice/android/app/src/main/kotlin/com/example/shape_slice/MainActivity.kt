@@ -57,7 +57,7 @@ class MainActivity : FlutterActivity() {
                     }
                 } catch (e: Throwable) {
                     releaseMnn()
-                    result.error("mnn", e.message ?: e.toString(), null)
+                    result.error("mnn", "${e.javaClass.simpleName}: ${e.message ?: e}", null)
                 }
             }
     }

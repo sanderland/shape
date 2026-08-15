@@ -15,20 +15,22 @@ class BoardGeometry {
   final Offset origin;
   final int size;
 
+  /// [origin] is the top-left intersection, placed so the margins around the grid
+  /// are equal. Previously the grid was drawn half a cell left of centre, which
+  /// left a margin three times wider on the right than on the left.
   BoardGeometry(Size canvas, this.size)
       : cell = math.min(canvas.width, canvas.height) / (size + 1),
         origin = Offset(
-          math.min(canvas.width, canvas.height) / (size + 1),
-          math.min(canvas.width, canvas.height) / (size + 1),
+          (canvas.width - (size - 1) * (math.min(canvas.width, canvas.height) / (size + 1))) / 2,
+          (canvas.height - (size - 1) * (math.min(canvas.width, canvas.height) / (size + 1))) / 2,
         );
 
-  Offset point(int x, int y) =>
-      Offset(origin.dx + x * cell - cell / 2, origin.dy + y * cell - cell / 2);
+  Offset point(int x, int y) => Offset(origin.dx + x * cell, origin.dy + y * cell);
 
   /// Nearest intersection to a tap, or null if clearly off-board.
   (int, int)? hit(Offset local) {
-    final x = ((local.dx - origin.dx + cell / 2) / cell).round();
-    final y = ((local.dy - origin.dy + cell / 2) / cell).round();
+    final x = ((local.dx - origin.dx) / cell).round();
+    final y = ((local.dy - origin.dy) / cell).round();
     if (x < 0 || y < 0 || x >= size || y >= size) return null;
     final d = (local - point(x, y)).distance;
     if (d > cell * 0.75) return null;

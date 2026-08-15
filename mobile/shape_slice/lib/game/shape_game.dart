@@ -148,8 +148,10 @@ class ShapeGame extends ChangeNotifier {
   int humanColor = Board.black;
   bool autoplayOpponent = true;
 
-  FeedbackMode feedbackMode = FeedbackMode.all;
-  HeatmapMode heatmapMode = HeatmapMode.target;
+  // Default to the least hand-holding that still teaches: no policy shown
+  // before you move, and only genuine mistakes called out afterwards.
+  FeedbackMode feedbackMode = FeedbackMode.mistakesOnly;
+  HeatmapMode heatmapMode = HeatmapMode.off;
 
   /// Profile whose policy the board paints, or null when the heatmap is off.
   String? get heatmapProfile => switch (heatmapMode) {
