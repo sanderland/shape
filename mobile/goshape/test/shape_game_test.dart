@@ -42,6 +42,10 @@ class FakeAnalyzer implements Analyzer {
   /// Policy to hand back; defaults to a flat board policy with no pass.
   PolicyData Function(GoPosition pos)? policyFor;
 
+  /// Per-profile override, so a move can look different to two ranks -- which is
+  /// the only way anything can be a mistake.
+  ProfileAnalysis Function(String profile, GoPosition pos)? overrideFor;
+
   @override
   Future<Map<String, ProfileAnalysis>> analyze(
       GoPosition pos, List<String> profiles) async {
@@ -55,7 +59,9 @@ class FakeAnalyzer implements Analyzer {
     analyzedProfiles.add(List.of(profiles));
     final policy = policyFor?.call(pos) ?? _flat(pos);
     return {
-      for (final p in profiles) p: ProfileAnalysis(policy, encodeLine(pos), 0.5),
+      for (final p in profiles)
+        p: overrideFor?.call(p, pos) ??
+            ProfileAnalysis(policy, encodeLine(pos), 0.5),
     };
   }
 
@@ -73,6 +79,28 @@ class FakeAnalyzer implements Analyzer {
     }
     return PolicyData(data, posLen, pos.boardSize);
   }
+}
+
+/// Every point equally likely.
+PolicyData flatHalf() {
+  final d = Float32List(posLen * posLen + 1);
+  for (var y = 0; y < 9; y++) {
+    for (var x = 0; x < 9; x++) {
+      d[y * posLen + x] = 0.5;
+    }
+  }
+  return PolicyData(d, posLen, 9);
+}
+
+/// Same, except the diagonal is never played -- where the test puts every move.
+PolicyData avoidsDiagonal() {
+  final d = Float32List(posLen * posLen + 1);
+  for (var y = 0; y < 9; y++) {
+    for (var x = 0; x < 9; x++) {
+      d[y * posLen + x] = x == y ? 0.0 : 0.5;
+    }
+  }
+  return PolicyData(d, posLen, 9);
 }
 
 PolicyData passHeavy(GoPosition pos) {
@@ -397,6 +425,71 @@ void main() {
     // The position where the opponent is about to reply exists for a moment; it
     // gets the opponent's policy and nothing else.
     expect(fake.analyzedProfiles.first, [g.opponentRank]);
+  });
+
+  test('mistake navigation lands on the move the card describes', () async {
+    // A move is a mistake when it costs points AND the target rank would not play
+    // it, so the fake has to disagree with itself across profiles. Every point is
+    // 50% to the player; the diagonal is 0% to the target. Constant lead 1.5 makes
+    // pointsLost = 1.5 + 1.5 - 1 = 2, over the one-point bar.
+    final fake = FakeAnalyzer();
+    final g = ShapeGame(fake, boardSize: 9, random: Random(2));
+    fake.overrideFor = (profile, pos) => ProfileAnalysis(
+          profile == g.targetRank ? avoidsDiagonal() : flatHalf(),
+          1.5,
+          0.5,
+        );
+    g.feedbackMode = FeedbackMode.all;
+    g.autoplayOpponent = false;
+    await g.start();
+
+    // Alternates B/W, so your moves are the even indices, all on the diagonal.
+    for (final p in const [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)]) {
+      await g.playAt(p.$1, p.$2);
+    }
+
+    final mistakes = g.knownMistakes;
+    expect(mistakes, isNotEmpty, reason: 'the fake should produce some');
+    // Only your own moves, and always in order.
+    for (final i in mistakes) {
+      expect(g.line[i].pla, g.humanColor);
+    }
+    expect(mistakes, orderedEquals(mistakes.toList()..sort()));
+
+    await g.goFirst();
+    await g.goToMistake(forward: true);
+    final first = mistakes.first;
+    expect(g.cursor, first + 1,
+        reason: 'the mistake must be the move just played, or the card shows another');
+    expect(g.feedback, isNotNull);
+    expect(g.feedback!.isMistake, isTrue);
+
+    // Forward then back returns to where it started.
+    if (mistakes.length > 1) {
+      await g.goToMistake(forward: true);
+      expect(g.cursor, mistakes[1] + 1);
+      await g.goToMistake(forward: false);
+      expect(g.cursor, first + 1);
+    }
+
+    await g.goLast();
+    expect(g.nextMistake, isNull, reason: 'nothing ahead of the last move');
+  });
+
+  test('unevaluated moves are not counted as mistakes', () async {
+    // With feedback off nothing is judged, so the arrows have nowhere to go rather
+    // than freezing the app to analyse a whole game on demand.
+    final fake = FakeAnalyzer();
+    final g = ShapeGame(fake, boardSize: 9, random: Random(2));
+    g.feedbackMode = FeedbackMode.off;
+    g.autoplayOpponent = false;
+    await g.start();
+    await g.playAt(0, 0);
+    await g.playAt(1, 1);
+
+    expect(g.knownMistakes, isEmpty);
+    expect(g.nextMistake, isNull);
+    expect(g.previousMistake, isNull);
   });
 
   test('review is unavailable before you have moved', () async {

@@ -9,6 +9,16 @@ import 'package:flutter/material.dart';
 import 'board_painter.dart';
 import 'game/shape_game.dart';
 
+/// The colour a verdict is drawn in, shared by the card and the ring the board
+/// puts around the move it is talking about. One function so the two cannot
+/// disagree about which move is being discussed.
+Color verdictColor(MoveVerdict verdict) => switch (verdict) {
+      MoveVerdict.mistake => const Color(0xFFE53935),
+      MoveVerdict.costly => const Color(0xFFEF6C00),
+      MoveVerdict.aboveYourLevel => const Color(0xFF0B6E2E),
+      MoveVerdict.typical => const Color(0xFF37474F),
+    };
+
 class FeedbackCard extends StatelessWidget {
   final MoveFeedback? feedback;
   final String playerRank;
@@ -46,28 +56,22 @@ class FeedbackCard extends StatelessWidget {
     // Every headline states what the numbers support and stops there. The cost
     // leads whenever there is one, because a card that opens with a verdict and
     // buries "lost 2.3 points" underneath is telling the player less than it knows.
-    final (color, headline, icon) = switch (fb.verdict) {
-      MoveVerdict.mistake => (
-          const Color(0xFFE53935),
-          'Lost $points points',
-          Icons.warning_amber,
-        ),
+    final color = verdictColor(fb.verdict);
+    final (headline, icon) = switch (fb.verdict) {
+      MoveVerdict.mistake => ('Lost $points points', Icons.warning_amber),
       MoveVerdict.costly => (
-          const Color(0xFFEF6C00),
           fb.targetPlaysItToo
               ? 'Lost $points points, but ${rankLabel(targetRank)} plays it too'
               : 'Lost $points points',
           Icons.warning_amber,
         ),
       MoveVerdict.aboveYourLevel => (
-          const Color(0xFF0B6E2E),
           // What the posterior actually measures, and nothing more. It also stays
           // true when the target rank is set below your own.
           'More ${rankLabel(targetRank)} than ${rankLabel(playerRank)}',
           Icons.check_circle_outline,
         ),
       MoveVerdict.typical => (
-          const Color(0xFF37474F),
           fb.isRare ? 'Rare at both ranks' : 'Nothing to flag',
           null,
         ),

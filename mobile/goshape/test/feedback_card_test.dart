@@ -93,6 +93,21 @@ void main() {
   });
 
   noticeTests();
+
+  test('every verdict has its own colour, so the ring identifies the move', () {
+    // The board rings the discussed move in this colour and the card is headed in
+    // it; two verdicts sharing one would make the pairing ambiguous.
+    final colors = MoveVerdict.values.map(verdictColor).toSet();
+    expect(colors.length, MoveVerdict.values.length);
+  });
+
+  testWidgets('the card is headed in the same colour the board rings with',
+      (tester) async {
+    final f = fb(playerProb: 0.20, targetProb: 0.01, pointsLost: 3.2);
+    await show(tester, f);
+    final headline = tester.widget<Text>(find.text('D4 · Lost 3.2 points'));
+    expect(headline.style?.color, verdictColor(f.verdict));
+  });
 }
 
 Future<void> showNotice(

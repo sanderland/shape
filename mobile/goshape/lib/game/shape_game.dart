@@ -365,7 +365,6 @@ class ShapeGame extends ChangeNotifier {
     if (!wantsFeedback || !hasEngine) return;
     final beforeIdx = lastOwnMoveIndex;
     if (beforeIdx == null) return;
-    final move = line[beforeIdx];
 
     // Usually both are cached from when the move was played; this only does work if
     // feedback was off then, or the ranks have changed since. The position after the
@@ -375,17 +374,30 @@ class ShapeGame extends ChangeNotifier {
     await _analyze(beforeIdx + 1, () => _positionAt(beforeIdx + 1),
         const [kReferenceProfile]);
 
-    final before = analyses[beforeIdx];
+    feedback = feedbackFor(beforeIdx);
+  }
+
+  /// How the move at [moveIdx] looks, from analyses already cached.
+  ///
+  /// Returns null when it is not yours, was a pass, or has not been evaluated --
+  /// this reads the cache and never triggers work, so it is safe to call for every
+  /// move in the game.
+  MoveFeedback? feedbackFor(int moveIdx) {
+    if (moveIdx < 0 || moveIdx >= line.length) return null;
+    final move = line[moveIdx];
+    if (move.pla != humanColor || move.isPass) return null;
+
+    final before = analyses[moveIdx];
     final player = before?[playerRank];
     final target = before?[targetRank];
-    if (player == null || target == null) return;
+    if (player == null || target == null) return null;
 
     // loc encodes x/y purely from board width, so the current board decodes it.
     final x = pos.board.locX(move.loc);
     final y = pos.board.locY(move.loc);
     final (pProb, pRel) = player.policy.at(x, y);
     final (tProb, tRel) = target.policy.at(x, y);
-    feedback = MoveFeedback(
+    return MoveFeedback(
       x: x,
       y: y,
       playerProb: pProb,
@@ -393,8 +405,44 @@ class ShapeGame extends ChangeNotifier {
       targetProb: tProb,
       targetRel: tRel,
       moveLikeTarget: posteriorLikeTarget(pProb, tProb),
-      pointsLost: _pointsLost(beforeIdx, wasPass: false),
+      pointsLost: _pointsLost(moveIdx, wasPass: false),
     );
+  }
+
+  /// Indices of your moves already known to be mistakes.
+  ///
+  /// Known, not all: a move is judged from cached analyses, which exist for every
+  /// move played while feedback was on. Moves never evaluated are skipped rather
+  /// than evaluated now, because scanning a whole game would cost a few hundred
+  /// milliseconds per move and freeze the button that asked for it.
+  List<int> get knownMistakes => [
+        for (var i = 0; i < line.length; i++)
+          if (feedbackFor(i)?.isMistake ?? false) i,
+      ];
+
+  /// Cursor position that shows [moveIdx] as the move just played.
+  int _cursorShowing(int moveIdx) => moveIdx + 1;
+
+  int? get nextMistake {
+    for (final i in knownMistakes) {
+      if (_cursorShowing(i) > cursor) return i;
+    }
+    return null;
+  }
+
+  int? get previousMistake {
+    int? found;
+    for (final i in knownMistakes) {
+      if (_cursorShowing(i) < cursor) found = i;
+    }
+    return found;
+  }
+
+  /// Jump so the mistake is the move just played, which is what the card describes.
+  Future<void> goToMistake({required bool forward}) async {
+    final idx = forward ? nextMistake : previousMistake;
+    if (idx == null) return;
+    await _goTo(_cursorShowing(idx));
   }
 
   Future<void> playAt(int x, int y) async {

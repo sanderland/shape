@@ -127,17 +127,25 @@ class _HomePageState extends State<HomePage> {
         title: _menu(g),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
+          // Double chevrons in the mistake colour: the shape says jump, the colour
+          // says what to. Jump-to-first lives in the menu -- it is rarer than these.
           IconButton(
-            tooltip: 'First move',
-            onPressed: navEnabled && g.canGoBack ? g.goFirst : null,
-            icon: const Icon(Icons.first_page),
+            tooltip: 'Previous mistake',
+            visualDensity: VisualDensity.compact,
+            onPressed: navEnabled && g.previousMistake != null
+                ? () => g.goToMistake(forward: false)
+                : null,
+            icon: const Icon(Icons.keyboard_double_arrow_left),
+            color: verdictColor(MoveVerdict.mistake),
           ),
           IconButton(
+            visualDensity: VisualDensity.compact,
             tooltip: 'Back',
             onPressed: navEnabled && g.canGoBack ? g.goPrev : null,
             icon: const Icon(Icons.chevron_left),
           ),
           IconButton(
+            visualDensity: VisualDensity.compact,
             tooltip: g.reviewing
                 ? 'Back to the game'
                 : 'What would ${rankLabel(g.targetRank)} have played?',
@@ -147,14 +155,25 @@ class _HomePageState extends State<HomePage> {
             color: g.reviewing ? const Color(0xFFF9A825) : null,
           ),
           IconButton(
+            visualDensity: VisualDensity.compact,
             tooltip: 'Forward',
             onPressed: navEnabled && g.canGoForward ? g.goNext : null,
             icon: const Icon(Icons.chevron_right),
           ),
           IconButton(
+            visualDensity: VisualDensity.compact,
             tooltip: 'Latest move',
             onPressed: navEnabled && g.canGoForward ? g.goLast : null,
             icon: const Icon(Icons.last_page),
+          ),
+          IconButton(
+            tooltip: 'Next mistake',
+            visualDensity: VisualDensity.compact,
+            onPressed: navEnabled && g.nextMistake != null
+                ? () => g.goToMistake(forward: true)
+                : null,
+            icon: const Icon(Icons.keyboard_double_arrow_right),
+            color: verdictColor(MoveVerdict.mistake),
           ),
         ],
       ),
@@ -183,6 +202,8 @@ class _HomePageState extends State<HomePage> {
           switch (v) {
             case 'pass':
               await target.pass();
+            case 'first':
+              await target.goFirst();
             case 'new':
               await _newGame(target);
             case 'ranks':
@@ -198,6 +219,16 @@ class _HomePageState extends State<HomePage> {
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.skip_next),
               title: Text('Pass'),
+            ),
+          ),
+          PopupMenuItem(
+            value: 'first',
+            enabled: !g.busy && g.canGoBack,
+            child: const ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.first_page),
+              title: Text('First move'),
             ),
           ),
           PopupMenuItem(
@@ -229,7 +260,8 @@ class _HomePageState extends State<HomePage> {
               style: const TextStyle(
                   fontFamily: 'monospace', fontSize: 11, color: Colors.black54),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${g.boardSize}x${g.boardSize}   move ${g.cursor}/${g.line.length}'),
+                Text('${g.boardSize}x${g.boardSize}   move ${g.cursor}/${g.line.length}'
+                    '   ${g.knownMistakes.length} mistakes'),
                 Text('score ${GameNotice.scoreLabel(g.scoreLeadForBlack) ?? "--"}'
                     '   (${rankLabel(kReferenceProfile)}, no search)'),
                 Text(g.hasEngine
@@ -262,6 +294,7 @@ class _HomePageState extends State<HomePage> {
             g.pos.board.locY(g.line[g.cursor - 1].loc),
           );
     final fb = g.feedback;
+    final showCard = _showCard(g);
     return Padding(
       padding: const EdgeInsets.all(6),
       child: AspectRatio(
@@ -290,7 +323,11 @@ class _HomePageState extends State<HomePage> {
                   board: g.pos.board,
                   heatmap: _overlayPolicy,
                   lastMove: lastMove,
-                  flaggedMove: (fb != null && fb.isMistake) ? (fb.x, fb.y) : null,
+                  // Ringed whenever the card is on screen, in the card's own
+                  // colour, so "which move is this about" needs no coordinates.
+                  markedMove: showCard && fb != null ? (fb.x, fb.y) : null,
+                  markColor:
+                      fb == null ? Colors.transparent : verdictColor(fb.verdict),
                   crosshair: _crosshair,
                   crosshairPlayer: g.pos.nextPlayer,
                 ),

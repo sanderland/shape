@@ -63,7 +63,8 @@ void main() {
         board: board,
         heatmap: policyOver(size),
         lastMove: (3, 3),
-        flaggedMove: (2, 2),
+        markedMove: (2, 2),
+        markColor: const Color(0xFFEF6C00),
         crosshair: (size - 1, size - 1),
         crosshairPlayer: Board.black,
       );

@@ -43,8 +43,13 @@ class BoardPainter extends CustomPainter {
   final int topN;
   final (int, int)? lastMove;
 
-  /// Move to ring in red (the one the feedback refers to), if any.
-  final (int, int)? flaggedMove;
+  /// The move the feedback card is talking about, ringed in [markColor].
+  ///
+  /// Without it the only ring on the board is the last-move marker, which sits on
+  /// the opponent's reply by the time you read the card -- so the card appeared to
+  /// be describing their move rather than yours.
+  final (int, int)? markedMove;
+  final Color markColor;
 
   /// Intersection under the finger, drawn as full-width guide lines and a preview
   /// stone. A stone is a good deal smaller than a fingertip, so aiming happens
@@ -59,7 +64,8 @@ class BoardPainter extends CustomPainter {
     this.heatmap,
     this.topN = 12,
     this.lastMove,
-    this.flaggedMove,
+    this.markedMove,
+    this.markColor = const Color(0xFFE53935),
     this.crosshair,
     this.crosshairPlayer = Board.black,
   });
@@ -154,7 +160,7 @@ class BoardPainter extends CustomPainter {
       );
     }
 
-    final fm = flaggedMove;
+    final fm = markedMove;
     if (fm != null) {
       canvas.drawCircle(
         g.point(fm.$1, fm.$2),
@@ -162,7 +168,7 @@ class BoardPainter extends CustomPainter {
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = cell * 0.09
-          ..color = const Color(0xFFE53935),
+          ..color = markColor,
       );
     }
 
