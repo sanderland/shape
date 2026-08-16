@@ -333,36 +333,39 @@ class ShapeGame extends ChangeNotifier {
     pos = GoPosition(boardSize, Rules.japanese);
   }
 
+  /// True from the moment you play until the automatic reply has landed.
+  ///
+  /// Whether that window is open cannot be read off the position: "the opponent is
+  /// to move" is also true when you have browsed to one of your own moves and are
+  /// sitting there looking at it. Only the app knows whether it is about to move
+  /// on, so it says so here rather than being guessed at.
+  bool autoReplyPending = false;
+
+  /// Would autoplay move on from where we are now?
+  bool get _autoReplyWouldFire =>
+      hasEngine && autoplayOpponent && !gameOver && pos.nextPlayer != humanColor;
+
   /// Profiles to evaluate at the current position, kept as small as its role
   /// allows: each one is a full net call (~250ms on a phone).
-  ///
-  /// A position where the opponent is about to reply is transient -- the reply
-  /// lands moments later -- so it only needs the opponent's policy to sample from
-  /// and the reference lead for points-lost. Player/target there would only feed
-  /// a heatmap nobody sees, and fill in lazily if you browse back.
   ///
   /// "Mistakes only" costs the same as "all": you cannot know a move was a
   /// mistake without evaluating it.
   List<String> get activeProfiles {
-    // Transient is deliberately not tied to being at the tip: a reply already in
-    // the tree is followed just as immediately as a freshly sampled one. Browsing
-    // lands on your own moves when autoplay is on, so this does not strip the
-    // heatmap from anywhere you can actually look.
-    final transient = autoplayOpponent && !humanToPlay && !gameOver;
     final needed = <String>{};
-    if (transient) needed.add(opponentRank);
-    if (wantsFeedback) {
-      needed.add(kReferenceProfile);
-      if (!transient) needed.addAll([playerRank, targetRank]);
+    if (autoReplyPending) {
+      // Nobody sees this position -- the reply lands moments later -- so it needs
+      // only the opponent's policy to sample from and, for feedback, the reference
+      // lead that points-lost for the move you just played is measured against.
+      needed.add(opponentRank);
+      if (wantsFeedback) needed.add(kReferenceProfile);
+      return needed.toList();
     }
-    if (!transient) {
-      // The score estimate is always shown, so the profile behind it is always
-      // evaluated -- except at transient positions, where the reply lands before
-      // anyone could read a score.
-      needed.add(kReferenceProfile);
-      final hm = heatmapProfile;
-      if (hm != null) needed.add(hm);
-    }
+    // The score is shown on every position you can look at, so its profile is
+    // never optional.
+    needed.add(kReferenceProfile);
+    if (wantsFeedback) needed.addAll([playerRank, targetRank]);
+    final hm = heatmapProfile;
+    if (hm != null) needed.add(hm);
     return needed.toList();
   }
 
@@ -409,6 +412,7 @@ class ShapeGame extends ChangeNotifier {
   }
 
   Future<void> start() async {
+    autoReplyPending = _autoReplyWouldFire;
     await _analyzeCurrent();
     await _maybeOpponentMove();
   }
@@ -566,6 +570,7 @@ class ShapeGame extends ChangeNotifier {
       final mover = pos.nextPlayer;
       pos.play(mover, loc);
       current = current.childFor(Move(mover, loc));
+      autoReplyPending = _autoReplyWouldFire;
       await _analyzeCurrent();
       await _updateFeedback();
     } catch (e) {
@@ -576,6 +581,7 @@ class ShapeGame extends ChangeNotifier {
     }
 
     await _maybeOpponentMove();
+    await _drainQueuedRefresh();
   }
 
   Future<void> _maybeOpponentMove() async {
@@ -619,11 +625,14 @@ class ShapeGame extends ChangeNotifier {
         final mover = pos.nextPlayer;
         pos.play(mover, loc);
         current = current.childFor(Move(mover, loc));
+        // The reply has landed, so this position is one you are looking at.
+        autoReplyPending = false;
         await _analyzeCurrent();
       }
     } catch (e) {
       error = '$e';
     } finally {
+      autoReplyPending = false;
       busy = false;
       notifyListeners();
     }
@@ -634,6 +643,8 @@ class ShapeGame extends ChangeNotifier {
   Future<void> _goToNode(GameNode target, {bool keepReview = false}) async {
     if (busy) return;
     if (!keepReview) _reviewReturn = null;
+    // Wherever browsing lands is a position on screen, not one being passed through.
+    autoReplyPending = false;
     busy = true;
     notifyListeners();
     try {
@@ -651,6 +662,7 @@ class ShapeGame extends ChangeNotifier {
       busy = false;
       notifyListeners();
     }
+    await _drainQueuedRefresh();
   }
 
   /// The last move you played at or before the cursor, or null.
@@ -726,6 +738,7 @@ class ShapeGame extends ChangeNotifier {
       error = null;
       boardSize = size ?? boardSize;
       pos = GoPosition(boardSize, Rules.japanese);
+      autoReplyPending = _autoReplyWouldFire;
       await _analyzeCurrent();
     } catch (e) {
       error = '$e';
@@ -734,6 +747,7 @@ class ShapeGame extends ChangeNotifier {
       notifyListeners();
     }
     await _maybeOpponentMove();
+    await _drainQueuedRefresh();
   }
 
   Future<void> setFeedbackMode(FeedbackMode mode) async {
@@ -749,18 +763,39 @@ class ShapeGame extends ChangeNotifier {
     await _refresh();
   }
 
+  /// A setting changed while something else was already analysing.
+  ///
+  /// The controls stay live during inference, so a second choice can land while
+  /// the first is still in flight. Dropping it would leave the picker showing a
+  /// rank nothing was ever evaluated for -- the label says 1d, the heatmap is 9d.
+  bool _refreshQueued = false;
+
   Future<void> _refresh() async {
     notifyListeners();
-    if (busy) return;
+    if (busy) {
+      _refreshQueued = true;
+      return;
+    }
     busy = true;
     notifyListeners();
     try {
-      await _analyzeCurrent();
-      await _updateFeedback();
+      // Loops rather than running once: each pass reads the settings as they are
+      // now, so whatever arrived during the last one is what gets analysed, and
+      // anything that arrives during this one is caught by the next.
+      do {
+        _refreshQueued = false;
+        await _analyzeCurrent();
+        await _updateFeedback();
+      } while (_refreshQueued);
     } finally {
       busy = false;
       notifyListeners();
     }
+  }
+
+  /// Picks up a refresh that arrived while a move or a jump held [busy].
+  Future<void> _drainQueuedRefresh() async {
+    if (_refreshQueued) await _refresh();
   }
 
   Future<void> setRanks({String? player, String? opponent, String? target}) async {

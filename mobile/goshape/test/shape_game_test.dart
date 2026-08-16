@@ -583,6 +583,63 @@ void main() {
     expect(g.nextMoves, isEmpty, reason: 'but it has no point to draw');
   });
 
+  test('a position you are looking at is evaluated even on the opponent\'s turn',
+      () async {
+    // Playing white means the opponent opens, so browsing back to the start lands
+    // on a position where they are to move. Nothing is about to happen there --
+    // you are looking at it -- so it needs everything a position on screen needs.
+    final fake = FakeAnalyzer();
+    final g = newGame(fake, autoplay: true);
+    g.humanColor = Board.white;
+    await g.setHeatmapMode(HeatmapMode.yourRank);
+    await g.start();
+    expect(g.cursor, 1, reason: 'the opponent opened');
+
+    await g.goFirst();
+    expect(g.humanToPlay, isFalse, reason: 'their turn, but on screen');
+    expect(g.activeProfiles, contains(g.playerRank),
+        reason: 'the heatmap you asked for must be evaluated');
+    expect(g.activeProfiles, contains(kReferenceProfile),
+        reason: 'and the score, which is always shown');
+  });
+
+  test('a rank changed while inference is running is still analysed', () async {
+    // The pickers stay live during a refresh, so a second choice lands mid-flight.
+    // It must not just update the label and be dropped.
+    final fake = FakeAnalyzer();
+    final g = newGame(fake);
+    await g.start();
+
+    final gate = Completer<void>();
+    fake.blockNextAnalysis = gate;
+    final firstChange = g.setRanks(target: 'rank_9d');
+    await g.setRanks(target: 'rank_1d');
+    gate.complete();
+    await firstChange;
+
+    expect(g.targetRank, 'rank_1d');
+    expect(g.analysisFor('rank_1d'), isNotNull,
+        reason: 'the rank actually selected was never evaluated');
+  });
+
+  test('a rank changed while a move is being analysed is picked up after',
+      () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake);
+    await g.start();
+
+    final gate = Completer<void>();
+    fake.blockNextAnalysis = gate;
+    final move = g.playAt(2, 2);
+    await g.setRanks(target: 'rank_9d');
+    gate.complete();
+    await move;
+
+    expect(g.targetRank, 'rank_9d');
+    expect(g.analysisFor('rank_9d'), isNotNull,
+        reason: 'a change made during a move must not be lost either');
+  });
+
   test('review is unavailable before you have moved', () async {
     final fake = FakeAnalyzer();
     final g = newGame(fake, autoplay: true);
