@@ -91,4 +91,58 @@ void main() {
     expect(find.textContaining('Feedback appears here after you move'), findsOneWidget);
     expect(find.textContaining('Welcome'), findsNothing);
   });
+
+  noticeTests();
+}
+
+Future<void> showNotice(
+  WidgetTester tester, {
+  bool gameOver = false,
+  bool opponentPassed = false,
+  double? score,
+}) =>
+    tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: GameNotice(
+          gameOver: gameOver,
+          opponentPassed: opponentPassed,
+          opponentRank: 'rank_1k',
+          scoreLeadForBlack: score,
+        ),
+      ),
+    ));
+
+void noticeTests() {
+  test('score is labelled by who is ahead, not by who is to move', () {
+    expect(GameNotice.scoreLabel(12.5), 'B+12.5');
+    expect(GameNotice.scoreLabel(-3.2), 'W+3.2');
+    expect(GameNotice.scoreLabel(0), 'B+0.0');
+    expect(GameNotice.scoreLabel(null), isNull);
+  });
+
+  testWidgets('a pass is announced, because it puts no stone on the board',
+      (tester) async {
+    await showNotice(tester, opponentPassed: true);
+    expect(find.text('1k passed'), findsOneWidget);
+    expect(find.text('Pass again to end the game.'), findsOneWidget);
+  });
+
+  testWidgets('game over leads with the score', (tester) async {
+    await showNotice(tester, gameOver: true, score: 12.5);
+    expect(find.text('Game over · B+12.5'), findsOneWidget);
+    // The lead head has no search behind it; the card must not imply otherwise.
+    expect(find.textContaining('without search'), findsOneWidget);
+  });
+
+  testWidgets('game over without an estimate still says the game is over',
+      (tester) async {
+    await showNotice(tester, gameOver: true, score: null);
+    expect(find.text('Game over'), findsOneWidget);
+  });
+
+  testWidgets('nothing is shown when there is nothing to announce',
+      (tester) async {
+    await showNotice(tester);
+    expect(find.byType(Card), findsNothing);
+  });
 }

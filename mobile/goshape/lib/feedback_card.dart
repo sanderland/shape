@@ -1,7 +1,7 @@
-// The card shown after your move.
+// The cards under the board.
 //
-// Its own widget rather than a method on the page because the wording is the part
-// of this app most worth pinning down, and a widget can be rendered in a test
+// Their own widgets rather than methods on the page because the wording is the
+// part of this app most worth pinning down, and a widget can be rendered in a test
 // without a device or a model behind it.
 
 import 'package:flutter/material.dart';
@@ -135,4 +135,71 @@ class FeedbackCard extends StatelessWidget {
         ]),
       );
 
+}
+
+/// Announces the things that happen without a stone appearing on the board.
+///
+/// A pass and the end of the game both change everything and look like nothing, so
+/// neither can be left to a line of grey monospace under the controls.
+class GameNotice extends StatelessWidget {
+  final bool gameOver;
+  final bool opponentPassed;
+  final String opponentRank;
+
+  /// Points for Black, from the net's lead head. Null until evaluated.
+  final double? scoreLeadForBlack;
+
+  const GameNotice({
+    super.key,
+    required this.gameOver,
+    required this.opponentPassed,
+    required this.opponentRank,
+    required this.scoreLeadForBlack,
+  });
+
+  /// "B+12.5", or null when there is no estimate yet.
+  static String? scoreLabel(double? leadForBlack) {
+    if (leadForBlack == null) return null;
+    final s = leadForBlack.abs().toStringAsFixed(1);
+    return '${leadForBlack >= 0 ? "B" : "W"}+$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!gameOver && !opponentPassed) return const SizedBox.shrink();
+
+    final score = scoreLabel(scoreLeadForBlack);
+    final (color, icon, title, detail) = gameOver
+        ? (
+            const Color(0xFF37474F),
+            Icons.flag_outlined,
+            score == null ? 'Game over' : 'Game over · $score',
+            'Both players passed. Score estimated by the net, without search.',
+          )
+        : (
+            const Color(0xFF00695C),
+            Icons.skip_next,
+            '${rankLabel(opponentRank)} passed',
+            'Pass again to end the game.',
+          );
+
+    return Card(
+      color: color.withValues(alpha: 0.08),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title,
+                  style: TextStyle(fontWeight: FontWeight.w700, color: color)),
+              Text(detail,
+                  style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
 }

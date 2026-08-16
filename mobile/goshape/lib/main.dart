@@ -41,8 +41,6 @@ class _HomePageState extends State<HomePage> {
   ShapeGame? game;
   Object? loadError;
   String status = 'loading model…';
-  final ScrollController _panelController = ScrollController();
-  MoveFeedback? _lastFeedback;
 
   /// Intersection currently under the finger, if any.
   (int, int)? _crosshair;
@@ -81,31 +79,12 @@ class _HomePageState extends State<HomePage> {
 
   void _onGameChanged() {
     if (!mounted) return;
-    final g = game;
-    final feedback = g?.feedback;
-    final revealFeedback = g != null &&
-        feedback != null &&
-        !identical(feedback, _lastFeedback) &&
-        (g.feedbackMode == FeedbackMode.all ||
-            (g.feedbackMode == FeedbackMode.mistakesOnly && feedback.isMistake));
-    _lastFeedback = feedback;
     setState(() {});
-    if (revealFeedback) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_panelController.hasClients) return;
-        _panelController.animateTo(
-          _panelController.position.minScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
-      });
-    }
   }
 
   @override
   void dispose() {
     game?.removeListener(_onGameChanged);
-    _panelController.dispose();
     super.dispose();
   }
 
@@ -145,7 +124,7 @@ class _HomePageState extends State<HomePage> {
     final navEnabled = !g.busy;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SHAPE'),
+        title: _menu(g),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           IconButton(
@@ -182,19 +161,87 @@ class _HomePageState extends State<HomePage> {
       body: SafeArea(
         child: Column(
           children: [
-            _board(g),
+            // The board takes what is left after the panel, rather than the panel
+            // being pushed off the bottom by a fixed-size board.
+            Flexible(child: _board(g)),
             if (g.busy) const LinearProgressIndicator(minHeight: 2),
-            Expanded(
-              child: SingleChildScrollView(
-                controller: _panelController,
-                child: _panel(g),
-              ),
-            ),
+            _panel(g),
           ],
         ),
       ),
     );
   }
+
+  /// Everything that is not needed on every move lives here, so the board and the
+  /// controls that are can fit on one screen without scrolling.
+  Widget _menu(ShapeGame g) => PopupMenuButton<String>(
+        tooltip: 'Menu',
+        position: PopupMenuPosition.under,
+        onSelected: (v) async {
+          final target = game;
+          if (target == null) return;
+          switch (v) {
+            case 'pass':
+              await target.pass();
+            case 'new':
+              await _newGame(target);
+            case 'ranks':
+              await _editRanks(target);
+          }
+        },
+        itemBuilder: (_) => [
+          PopupMenuItem(
+            value: 'pass',
+            enabled: !g.busy && !g.gameOver && g.humanToPlay,
+            child: const ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.skip_next),
+              title: Text('Pass'),
+            ),
+          ),
+          PopupMenuItem(
+            value: 'new',
+            enabled: !g.busy,
+            child: const ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.refresh),
+              title: Text('New game'),
+            ),
+          ),
+          PopupMenuItem(
+            value: 'ranks',
+            enabled: !g.busy,
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.tune),
+              title: const Text('Ranks'),
+              subtitle: Text('${rankLabel(g.playerRank)} · ${rankLabel(g.targetRank)} '
+                  '· ${rankLabel(g.opponentRank)}'),
+            ),
+          ),
+          const PopupMenuDivider(),
+          PopupMenuItem(
+            enabled: false,
+            child: DefaultTextStyle(
+              style: const TextStyle(
+                  fontFamily: 'monospace', fontSize: 11, color: Colors.black54),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${g.boardSize}x${g.boardSize}   move ${g.cursor}/${g.line.length}'),
+                Text(g.hasEngine
+                    ? '${g.engine!.provider}   ${g.analysisMs} ms/move'
+                    : 'no engine'),
+              ]),
+            ),
+          ),
+        ],
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text('SHAPE', style: Theme.of(context).textTheme.titleLarge),
+          const Icon(Icons.arrow_drop_down),
+        ]),
+      );
 
   bool _canPlay(ShapeGame g) =>
       !g.busy && g.humanToPlay && !g.gameOver;
@@ -260,10 +307,17 @@ class _HomePageState extends State<HomePage> {
     // merely empty, they are unavailable.
     final analysisEnabled = controlsEnabled && g.hasEngine;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          GameNotice(
+            gameOver: g.gameOver,
+            opponentPassed: g.opponentJustPassed,
+            opponentRank: g.opponentRank,
+            scoreLeadForBlack: g.scoreLeadForBlack,
+          ),
           if (_showCard(g)) ...[
             FeedbackCard(
               feedback: g.feedback,
@@ -271,7 +325,7 @@ class _HomePageState extends State<HomePage> {
               targetRank: g.targetRank,
               boardSize: g.boardSize,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
           ],
           _labelled('Feedback after your move', SegmentedButton<FeedbackMode>(
             segments: const [
@@ -294,45 +348,16 @@ class _HomePageState extends State<HomePage> {
             onSelectionChanged:
                 analysisEnabled ? (s) => g.setHeatmapMode(s.first) : null,
           )),
-          const SizedBox(height: 8),
-          Row(children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: !controlsEnabled || g.gameOver || !g.humanToPlay
-                    ? null
-                    : g.pass,
-                icon: const Icon(Icons.skip_next),
-                label: const Text('Pass'),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: controlsEnabled ? () => _newGame(g) : null,
-                icon: const Icon(Icons.refresh),
-                label: const Text('New game'),
-              ),
-            ),
-          ]),
-          const SizedBox(height: 4),
-          _ranksSummary(g, controlsEnabled),
-          const SizedBox(height: 4),
-          DefaultTextStyle(
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.black54),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('move ${g.cursor}/${g.line.length}   '
-                  '${g.gameOver ? "game over" : (g.humanToPlay ? "your turn" : "opponent…")}'
-                  '${g.hasEngine ? "   ${g.analysisMs} ms   ${g.engine!.provider}" : ""}'),
-              if (g.engineError != null) ...[
-                const Text('No engine — board only, no opponent or feedback',
-                    style: TextStyle(color: Color(0xFFE65100), fontSize: 12)),
-                Text(g.engineError!,
-                    style: const TextStyle(color: Colors.black54, fontSize: 11)),
-              ],
-              if (g.error != null)
-                Text(g.error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
-            ]),
-          ),
+          if (g.engineError != null) ...[
+            const SizedBox(height: 4),
+            Text('No engine — board only, no opponent or feedback. '
+                '${g.engineError}',
+                style: const TextStyle(color: Color(0xFFE65100), fontSize: 11)),
+          ],
+          if (g.error != null) ...[
+            const SizedBox(height: 4),
+            Text(g.error!, style: const TextStyle(color: Colors.red, fontSize: 11)),
+          ],
         ],
       ),
     );
@@ -381,28 +406,6 @@ class _HomePageState extends State<HomePage> {
           ),
           child,
         ],
-      );
-
-  /// One line instead of three dropdowns, so the card and controls fit without
-  /// scrolling. Tapping opens the pickers in a sheet.
-  Widget _ranksSummary(ShapeGame g, bool enabled) => InkWell(
-        onTap: enabled ? () => _editRanks(g) : null,
-        borderRadius: BorderRadius.circular(6),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-          child: Row(children: [
-            const Icon(Icons.tune, size: 16, color: Colors.black54),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'You ${rankLabel(g.playerRank)}  ·  aiming at '
-                '${rankLabel(g.targetRank)}  ·  vs ${rankLabel(g.opponentRank)}',
-                style: const TextStyle(fontSize: 13),
-              ),
-            ),
-            const Icon(Icons.expand_more, size: 18, color: Colors.black54),
-          ]),
-        ),
       );
 
   Future<void> _editRanks(ShapeGame g) => showModalBottomSheet<void>(

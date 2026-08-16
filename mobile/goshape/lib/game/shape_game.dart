@@ -246,6 +246,8 @@ class ShapeGame extends ChangeNotifier {
       needed.add(kReferenceProfile);
       if (!transient) needed.addAll([playerRank, targetRank]);
     }
+    // The final score is worth having even when feedback is off.
+    if (gameOver) needed.add(kReferenceProfile);
     if (!transient) {
       final hm = heatmapProfile;
       if (hm != null) needed.add(hm);
@@ -256,6 +258,22 @@ class ShapeGame extends ChangeNotifier {
   /// Profiles needed to describe a move already played (no opponent sampling).
   List<String> get _feedbackProfiles =>
       {playerRank, targetRank, kReferenceProfile}.toList();
+
+  /// True when the move that produced this position was the opponent passing.
+  /// Easy to miss otherwise: a pass puts no stone on the board.
+  bool get opponentJustPassed =>
+      cursor > 0 && line[cursor - 1].isPass && line[cursor - 1].pla != humanColor;
+
+  /// Score estimate for the current position in points for Black, or null if it
+  /// has not been evaluated. From the reference profile's lead head, which is a
+  /// net estimate with no search behind it -- good enough to say who is ahead and
+  /// roughly by how much, and labelled as an estimate wherever it is shown.
+  double? get scoreLeadForBlack {
+    final a = analyses[cursor]?[kReferenceProfile];
+    if (a == null) return null;
+    // lead is from the side to move's point of view.
+    return pos.nextPlayer == Board.black ? a.lead : -a.lead;
+  }
 
   bool get atTip => cursor == line.length;
   bool get canGoBack => cursor > 0;
