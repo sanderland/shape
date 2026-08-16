@@ -160,18 +160,19 @@ void main() {
     final fake = FakeAnalyzer();
     final g = newGame(fake, autoplay: true);
 
-    // Everything off: a human-to-move position needs nothing at all.
+    // Everything off: only the profile behind the score estimate, which is always
+    // shown and so is never optional.
     await g.setFeedbackMode(FeedbackMode.off);
     await g.setHeatmapMode(HeatmapMode.off);
-    expect(g.activeProfiles, isEmpty);
+    expect(g.activeProfiles, [kReferenceProfile]);
     expect(g.feedback, isNull);
 
     // Heatmap alone pulls in exactly the painted profile, not the feedback set.
     await g.setHeatmapMode(HeatmapMode.target);
-    expect(g.activeProfiles, [g.targetRank]);
+    expect(g.activeProfiles.toSet(), {kReferenceProfile, g.targetRank});
 
     await g.setHeatmapMode(HeatmapMode.yourRank);
-    expect(g.activeProfiles, [g.playerRank]);
+    expect(g.activeProfiles.toSet(), {kReferenceProfile, g.playerRank});
 
     // Feedback alone needs player + target + the score reference, heatmap or not.
     await g.setHeatmapMode(HeatmapMode.off);
@@ -367,6 +368,35 @@ void main() {
     expect(g.analysisFor(kReferenceProfile), isNotNull);
     expect(fake.calls, before,
         reason: 'the reference profile is already evaluated for the score');
+  });
+
+  test('a score estimate is available with feedback and heatmap both off',
+      () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake, autoplay: true);
+    g.feedbackMode = FeedbackMode.off;
+    await g.setHeatmapMode(HeatmapMode.off);
+    await g.start();
+    await g.playAt(2, 2);
+
+    expect(g.feedback, isNull, reason: 'feedback is off');
+    expect(g.scoreLeadForBlack, isNotNull,
+        reason: 'the score does not depend on having asked for feedback');
+  });
+
+  test('the opponent\'s own turn is not charged for a score nobody can read',
+      () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake, autoplay: true);
+    g.feedbackMode = FeedbackMode.off;
+    await g.setHeatmapMode(HeatmapMode.off);
+    await g.start();
+    fake.analyzedProfiles.clear();
+    await g.playAt(2, 2);
+
+    // The position where the opponent is about to reply exists for a moment; it
+    // gets the opponent's policy and nothing else.
+    expect(fake.analyzedProfiles.first, [g.opponentRank]);
   });
 
   test('review is unavailable before you have moved', () async {

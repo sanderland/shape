@@ -242,9 +242,10 @@ class ShapeGame extends ChangeNotifier {
   /// be computed for the move just played. Player/target there would only feed a
   /// heatmap nobody sees, and fill in lazily if you browse back.
   ///
-  /// Turning both feedback and the heatmap off drops a full exchange to a single
-  /// evaluation. "Mistakes only" costs the same as "all": you cannot know a move
-  /// was a mistake without evaluating it.
+  /// With feedback and the heatmap both off an exchange costs two evaluations:
+  /// the opponent's policy to reply from, and the reference profile behind the
+  /// score. "Mistakes only" costs the same as "all": you cannot know a move was a
+  /// mistake without evaluating it.
   List<String> get activeProfiles {
     final transient = autoplayOpponent && atTip && !humanToPlay && !gameOver;
     final needed = <String>{};
@@ -253,9 +254,12 @@ class ShapeGame extends ChangeNotifier {
       needed.add(kReferenceProfile);
       if (!transient) needed.addAll([playerRank, targetRank]);
     }
-    // The final score is worth having even when feedback is off.
-    if (gameOver) needed.add(kReferenceProfile);
     if (!transient) {
+      // The score estimate is always shown, so the profile behind it is always
+      // evaluated -- one extra call per move, and only when feedback is off, since
+      // feedback needs the same profile anyway. Transient positions are skipped:
+      // the opponent's reply lands before anyone could read a score off them.
+      needed.add(kReferenceProfile);
       final hm = heatmapProfile;
       if (hm != null) needed.add(hm);
     }

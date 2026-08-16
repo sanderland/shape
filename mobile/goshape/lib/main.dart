@@ -230,6 +230,8 @@ class _HomePageState extends State<HomePage> {
                   fontFamily: 'monospace', fontSize: 11, color: Colors.black54),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('${g.boardSize}x${g.boardSize}   move ${g.cursor}/${g.line.length}'),
+                Text('score ${GameNotice.scoreLabel(g.scoreLeadForBlack) ?? "--"}'
+                    '   (${rankLabel(kReferenceProfile)}, no search)'),
                 Text(g.hasEngine
                     ? '${g.engine!.provider}   ${g.analysisMs} ms/move'
                     : 'no engine'),
