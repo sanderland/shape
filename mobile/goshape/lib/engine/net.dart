@@ -31,6 +31,32 @@ abstract class NetRunner {
   Future<void> close();
 }
 
+/// A breadcrumb that outlives the process, so a device that faults does so once.
+///
+/// A SIGILL inside libMNN kills the process before any handler runs, so nothing
+/// the app writes at the time survives. The marker therefore goes down *before*
+/// the first call and is cleared once one has returned. Finding it still there at
+/// the next launch means the engine killed us, and the app starts without one.
+class EngineTrial {
+  static File? _file;
+
+  static Future<File> _handle() async =>
+      _file ??= File('${await MnnRunner.cacheDir()}/engine_trial');
+
+  static Future<bool> crashedBefore() async => (await _handle()).existsSync();
+
+  static Future<void> begin() async =>
+      (await _handle()).writeAsStringSync('loading engine', flush: true);
+
+  static Future<void> survived() async {
+    final f = await _handle();
+    if (f.existsSync()) f.deleteSync();
+  }
+
+  /// Lets the user ask for another attempt after, say, an app update.
+  static Future<void> reset() => survived();
+}
+
 class MnnRunner implements NetRunner {
   static const MethodChannel _channel = MethodChannel('shape/mnn');
 
@@ -41,6 +67,9 @@ class MnnRunner implements NetRunner {
     await _channel.invokeMethod<void>('load', {'path': await _extract()});
     return MnnRunner();
   }
+
+  static Future<String> cacheDir() async =>
+      (await _channel.invokeMethod<String>('cacheDir'))!;
 
   /// MNN needs a filesystem path, so the model is copied out of the bundle once.
   ///

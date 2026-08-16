@@ -106,6 +106,25 @@ abstract class Analyzer {
   Future<Map<String, ProfileAnalysis>> analyze(GoPosition pos, List<String> profiles);
 }
 
+/// Why there is no engine. The message is written for the status line, not a log.
+class EngineUnavailable implements Exception {
+  final String message;
+  const EngineUnavailable(this.message);
+  @override
+  String toString() => message;
+}
+
+/// Trims an exception down to the part worth showing in the UI: the message,
+/// without the platform wrapper or the Java class name in front of it.
+String describeFailure(Object e) {
+  final s = '$e';
+  final wrapped =
+      RegExp(r'PlatformException\([^,]*,\s*(.*?),\s*null,\s*null\)').firstMatch(s);
+  var out = (wrapped?.group(1) ?? s).split('\n').first.trim();
+  out = out.replaceFirst(RegExp(r'^[A-Za-z_$]*(Exception|Error)\s*:\s*'), '');
+  return out;
+}
+
 /// Runs the human-SL net on device.
 class ShapeEngine implements Analyzer {
   final NetRunner runner;
@@ -117,19 +136,38 @@ class ShapeEngine implements Analyzer {
   @override
   String get provider => runner.label;
 
-  /// Load the net and refuse to run on a device that computes it wrongly.
+  /// Load the net, or explain why there will not be one.
   ///
-  /// The check costs one evaluation at startup and is worth it: a net that is
-  /// quietly wrong produces feedback that looks entirely plausible and is not,
-  /// which is worse than not starting.
+  /// Throws [EngineUnavailable] rather than letting a platform exception escape:
+  /// every caller wants a sentence to show, and none of them can fix the problem.
+  /// The app runs on without an engine, so failing here costs feedback and the
+  /// opponent, not the whole app.
+  ///
+  /// Loading is not enough to earn use. The net must also reproduce what the
+  /// desktop export produced on the bundled position, because a net that is quietly
+  /// wrong produces feedback that looks entirely plausible and is not.
   static Future<ShapeEngine> load({int posLen = 19}) async {
-    final engine = ShapeEngine(await MnnRunner.load(), posLen: posLen);
-    final check = await engine.verifyAgainstReference();
-    if (!check.ok) {
-      await engine.close();
-      throw StateError('the net does not compute correctly on this device: $check');
+    if (await EngineTrial.crashedBefore()) {
+      throw const EngineUnavailable(
+          'the engine crashed this device on an earlier run, so it was not started again');
     }
-    return engine;
+    await EngineTrial.begin();
+    ShapeEngine? engine;
+    try {
+      engine = ShapeEngine(await MnnRunner.load(), posLen: posLen);
+      final check = await engine.verifyAgainstReference();
+      if (!check.ok) {
+        throw EngineUnavailable('the net does not compute correctly here ($check)');
+      }
+      // Only reached once a forward pass has returned. A hard fault never gets
+      // here, which is the point of the breadcrumb.
+      await EngineTrial.survived();
+      return engine;
+    } catch (e) {
+      await engine?.close().catchError((_) {});
+      await EngineTrial.survived();
+      throw e is EngineUnavailable ? e : EngineUnavailable(describeFailure(e));
+    }
   }
 
   /// Does this device reproduce what the desktop export produced?

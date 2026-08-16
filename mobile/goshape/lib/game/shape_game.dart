@@ -135,7 +135,9 @@ class MoveFeedback {
 const List<int> kBoardSizes = [9, 13, 19];
 
 class ShapeGame extends ChangeNotifier {
-  final Analyzer engine;
+  /// Null when the engine could not start. The board still works without it: you
+  /// place stones for both sides and get no feedback, which beats no app at all.
+  final Analyzer? engine;
 
   /// Not final: [newGame] can change it.
   int boardSize;
@@ -177,6 +179,15 @@ class ShapeGame extends ChangeNotifier {
 
   bool busy = false;
   String? error;
+
+  /// Why there is no engine, if there is none. Shown in the status line.
+  String? engineError;
+
+  /// Set when a call to a loaded engine throws, so one failure does not become a
+  /// failure on every move for the rest of the session.
+  bool _engineFailed = false;
+
+  bool get hasEngine => engine != null && !_engineFailed;
   MoveFeedback? feedback;
   int analysisMs = 0;
 
@@ -219,7 +230,7 @@ class ShapeGame extends ChangeNotifier {
   bool get atTip => cursor == line.length;
   bool get canGoBack => cursor > 0;
   bool get canGoForward => cursor < line.length;
-  bool get humanToPlay => pos.nextPlayer == humanColor;
+  bool get humanToPlay => !hasEngine || pos.nextPlayer == humanColor;
   bool get gameOver =>
       cursor >= 2 && line[cursor - 1].isPass && line[cursor - 2].isPass;
 
@@ -248,13 +259,21 @@ class ShapeGame extends ChangeNotifier {
     GoPosition Function() buildPosition,
     List<String> profiles,
   ) async {
+    if (!hasEngine) return;
     final want =
         profiles.where((x) => !(analyses[idx]?.containsKey(x) ?? false)).toList();
     if (want.isEmpty) return;
     final sw = Stopwatch()..start();
-    final result = await engine.analyze(buildPosition(), want);
-    analysisMs = sw.elapsedMilliseconds;
-    (analyses[idx] ??= {}).addAll(result);
+    try {
+      final result = await engine!.analyze(buildPosition(), want);
+      analysisMs = sw.elapsedMilliseconds;
+      (analyses[idx] ??= {}).addAll(result);
+    } catch (e) {
+      // Inference failing once means it will fail again, so stop asking and say so
+      // rather than erroring on every move from here on.
+      _engineFailed = true;
+      engineError = 'inference failed: ${describeFailure(e)}';
+    }
   }
 
   Future<void> _analyzeCurrent() => _analyze(cursor, () => pos, activeProfiles);
@@ -284,7 +303,7 @@ class ShapeGame extends ChangeNotifier {
   /// keying off it would leave the card empty for the whole of your thinking time.
   Future<void> _updateFeedback() async {
     feedback = null;
-    if (!wantsFeedback) return;
+    if (!wantsFeedback || !hasEngine) return;
     final beforeIdx = lastOwnMoveIndex;
     if (beforeIdx == null) return;
     final move = line[beforeIdx];
@@ -362,6 +381,7 @@ class ShapeGame extends ChangeNotifier {
   }
 
   Future<void> _maybeOpponentMove() async {
+    if (!hasEngine) return;
     if (!autoplayOpponent || gameOver || humanToPlay || busy || !atTip) return;
     busy = true;
     notifyListeners();

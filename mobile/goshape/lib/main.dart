@@ -52,10 +52,19 @@ class _HomePageState extends State<HomePage> {
     _load();
   }
 
+  /// The board is worth having even when the engine is not available, so a failure
+  /// to load one degrades the app rather than replacing it with an error screen.
   Future<void> _load() async {
+    ShapeEngine? engine;
+    String? engineError;
     try {
-      final engine = await ShapeEngine.load();
-      final g = ShapeGame(engine, boardSize: 19);
+      engine = await ShapeEngine.load();
+    } catch (e, st) {
+      debugPrint('$e\n$st');
+      engineError = describeFailure(e);
+    }
+    try {
+      final g = ShapeGame(engine, boardSize: 19)..engineError = engineError;
       g.addListener(_onGameChanged);
       setState(() {
         game = g;
@@ -152,7 +161,8 @@ class _HomePageState extends State<HomePage> {
             tooltip: g.reviewing
                 ? 'Back to the game'
                 : 'What would ${rankLabel(g.targetRank)} have played?',
-            onPressed: navEnabled && g.canReviewOwnMove ? g.toggleReview : null,
+            onPressed:
+                navEnabled && g.hasEngine && g.canReviewOwnMove ? g.toggleReview : null,
             icon: Icon(g.reviewing ? Icons.lightbulb : Icons.lightbulb_outline),
             color: g.reviewing ? const Color(0xFFF9A825) : null,
           ),
@@ -245,6 +255,9 @@ class _HomePageState extends State<HomePage> {
 
   Widget _panel(ShapeGame g) {
     final controlsEnabled = !g.busy;
+    // Feedback and heatmaps are the engine's output, so without one they are not
+    // merely empty, they are unavailable.
+    final analysisEnabled = controlsEnabled && g.hasEngine;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
       child: Column(
@@ -264,7 +277,7 @@ class _HomePageState extends State<HomePage> {
             ],
             selected: {g.feedbackMode},
             onSelectionChanged:
-                controlsEnabled ? (s) => g.setFeedbackMode(s.first) : null,
+                analysisEnabled ? (s) => g.setFeedbackMode(s.first) : null,
           )),
           const SizedBox(height: 6),
           _labelled('Show the policy before you move', SegmentedButton<HeatmapMode>(
@@ -275,7 +288,7 @@ class _HomePageState extends State<HomePage> {
             ],
             selected: {g.heatmapMode},
             onSelectionChanged:
-                controlsEnabled ? (s) => g.setHeatmapMode(s.first) : null,
+                analysisEnabled ? (s) => g.setHeatmapMode(s.first) : null,
           )),
           const SizedBox(height: 8),
           Row(children: [
@@ -302,8 +315,14 @@ class _HomePageState extends State<HomePage> {
             style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.black54),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('move ${g.cursor}/${g.line.length}   '
-                  '${g.gameOver ? "game over" : (g.humanToPlay ? "your turn" : "opponent…")}   '
-                  '${g.analysisMs} ms   ${g.engine.provider}'),
+                  '${g.gameOver ? "game over" : (g.humanToPlay ? "your turn" : "opponent…")}'
+                  '${g.hasEngine ? "   ${g.analysisMs} ms   ${g.engine!.provider}" : ""}'),
+              if (g.engineError != null) ...[
+                const Text('No engine — board only, no opponent or feedback',
+                    style: TextStyle(color: Color(0xFFE65100), fontSize: 12)),
+                Text(g.engineError!,
+                    style: const TextStyle(color: Colors.black54, fontSize: 11)),
+              ],
               if (g.error != null)
                 Text(g.error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
             ]),

@@ -35,6 +35,10 @@ class FakeAnalyzer implements Analyzer {
   final List<List<String>> analyzedProfiles = [];
   Completer<void>? blockNextAnalysis;
 
+  /// Start throwing once this many calls have been made, to model a runtime that
+  /// works at startup and then stops.
+  int? failFrom;
+
   /// Policy to hand back; defaults to a flat board policy with no pass.
   PolicyData Function(GoPosition pos)? policyFor;
 
@@ -44,6 +48,8 @@ class FakeAnalyzer implements Analyzer {
     final blocker = blockNextAnalysis;
     blockNextAnalysis = null;
     if (blocker != null) await blocker.future;
+    final limit = failFrom;
+    if (limit != null && calls >= limit) throw StateError('engine went away');
     calls += 1;
     analyzedMoveCounts.add(pos.moves.length);
     analyzedProfiles.add(List.of(profiles));
@@ -304,6 +310,48 @@ void main() {
       expect(g.pos.board.locY(m.loc), lessThan(9));
     }
     expect(g.toSgf(), contains('SZ[9]'));
+  });
+
+  test('without an engine the board still works', () async {
+    final g = ShapeGame(null, boardSize: 9, random: Random(1))
+      ..engineError = 'no engine here';
+    await g.start();
+
+    // You place both colours yourself, since nothing is there to reply.
+    await g.playAt(2, 2);
+    await g.playAt(4, 4);
+    expect(g.line.length, 2);
+    expect(g.pos.board.board[g.pos.board.loc(2, 2)], Board.black);
+    expect(g.pos.board.board[g.pos.board.loc(4, 4)], Board.white);
+
+    expect(g.hasEngine, isFalse);
+    expect(g.feedback, isNull);
+    expect(g.error, isNull, reason: 'a missing engine is not a per-move error');
+
+    // Illegal moves are still refused, and navigation still works.
+    await g.playAt(2, 2);
+    expect(g.error, isNotNull);
+    await g.goFirst();
+    expect(g.cursor, 0);
+  });
+
+  test('an engine that starts failing degrades instead of erroring every move',
+      () async {
+    final fake = FakeAnalyzer()..failFrom = 2;
+    final g = newGame(fake, autoplay: true);
+    g.feedbackMode = FeedbackMode.all;
+    await g.start();
+    expect(g.hasEngine, isTrue);
+
+    await g.playAt(2, 2);
+    expect(g.hasEngine, isFalse, reason: 'one failure is enough to stop asking');
+    expect(g.engineError, contains('inference failed'));
+
+    final callsAfterFailure = fake.calls;
+    await g.playAt(4, 4);
+    expect(fake.calls, callsAfterFailure, reason: 'must not keep retrying');
+    expect(g.line.length, 3, reason: 'stones still go down');
+    expect(g.feedback, isNull);
   });
 
   test('review is unavailable before you have moved', () async {

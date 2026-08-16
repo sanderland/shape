@@ -83,6 +83,20 @@ void main() {
     }
   });
 
+  test('failures are described in words a status line can show', () {
+    // What the platform channel actually hands back, wrapper and Java class name
+    // and all, versus what belongs in front of a user.
+    expect(
+      describeFailure(
+          'PlatformException(mnn, IllegalStateException: not supported on the '
+          'Android emulator, null, null)'),
+      'not supported on the Android emulator',
+    );
+    expect(describeFailure(StateError('engine went away')),
+        'Bad state: engine went away');
+    expect(describeFailure('plain trouble\nstack frame'), 'plain trouble');
+  });
+
   test('provider name and close pass through to the runner', () async {
     final runner = RecordingRunner(label: 'MNN CPU');
     final engine = ShapeEngine(runner);

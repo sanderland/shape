@@ -1,5 +1,6 @@
 package io.github.sanderland.goshape
 
+import android.os.Build
 import com.taobao.android.mnn.MNNNetNative
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -68,7 +69,30 @@ class MainActivity : FlutterActivity() {
      * ONNX without trouble, so the Dart side writes the model out and hands over
      * a path.
      */
+    /**
+     * True on the Android emulator, which cannot run this library.
+     *
+     * MNN picks its kernels from the CPU features the machine advertises, and the
+     * emulator claims ARMv8.2 extensions (SVE2 among them) that it does not
+     * implement, so libMNN dispatches to instructions that fault with SIGILL. That
+     * is a native fault: it kills the process outright, and no Kotlin or Dart catch
+     * can contain it. The only way not to crash is not to call it, so refuse here
+     * and let the app fall back to running without an engine.
+     */
+    private fun isEmulator(): Boolean =
+        Build.FINGERPRINT.startsWith("generic") ||
+            Build.FINGERPRINT.lowercase().contains("emulator") ||
+            Build.MODEL.contains("sdk_gphone") ||
+            Build.MODEL.contains("Emulator") ||
+            Build.PRODUCT.contains("sdk") ||
+            Build.HARDWARE.contains("goldfish") ||
+            Build.HARDWARE.contains("ranchu")
+
     private fun load(path: String): Map<String, Any> {
+        check(!isEmulator()) {
+            "not supported on the Android emulator, which advertises CPU features " +
+                "it does not implement"
+        }
         releaseMnn()
         MNNNetNative.ensureLoaded()
         check(File(path).exists()) { "model not found at $path" }
