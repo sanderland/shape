@@ -48,6 +48,12 @@ const double kMaxProbThreshold = 0.01;
 /// At 0.5 nearly two in five of the player's own ordinary moves were praised.
 const double kAboveTargetThreshold = 0.667;
 
+/// How often the target rank must actually play a move before "your target plays
+/// it too" is worth saying. The posterior is a ratio, so a target that plays a move
+/// 1.5% of the time against your 6% clears it while barely playing the move at all,
+/// and the sentence then reads as an endorsement nobody made.
+const double kTargetPlaysItThreshold = 0.02;
+
 /// Probabilities below this are treated as equal when forming the posterior.
 ///
 /// Without it, target 0.0011% against player 0.0001% reports "91% like your
@@ -63,7 +69,21 @@ String rankLabel(String profile) {
   return profile;
 }
 
-enum MoveVerdict { mistake, aboveYourLevel, typical }
+enum MoveVerdict {
+  /// Lost real points on a move your target rank does not reach for.
+  mistake,
+
+  /// Lost real points, but on a move the target rank plays. Distinct from
+  /// [typical] because leading with "typical" while the move cost two points
+  /// tells the player less than the card knows.
+  costly,
+
+  /// The target rank is at least twice as likely to play it as your rank.
+  aboveYourLevel,
+
+  /// Nothing the numbers can say. The fallback, and honest about being one.
+  typical,
+}
 
 /// How much of the post-move card to show. Independent of [HeatmapMode]: the
 /// heatmap tells you what to play *before* you move, this judges it after.
@@ -110,12 +130,20 @@ class MoveFeedback {
   bool get isRare => maxProb < kMaxProbThreshold;
   bool get costly => (pointsLost ?? 0) > kMistakeSizePoints;
 
+  /// Whether the target rank plays this often enough for saying so to mean
+  /// anything. See [kTargetPlaysItThreshold].
+  bool get targetPlaysItToo => targetProb >= kTargetPlaysItThreshold;
+
   /// Desktop's rule: a big loss only counts as a mistake worth flagging if the move
   /// is either unlike your target rank or one almost nobody plays. A costly move the
-  /// target rank would happily play is a level-appropriate move, not a blunder.
+  /// target rank would happily play is a level-appropriate move, not a blunder --
+  /// but it is still costly, and [MoveVerdict.costly] says so rather than filing it
+  /// under "typical" with the price in a footnote.
   MoveVerdict get verdict {
-    if (costly && (isRare || moveLikeTarget < kTargetRankThreshold)) {
-      return MoveVerdict.mistake;
+    if (costly) {
+      return (isRare || moveLikeTarget < kTargetRankThreshold)
+          ? MoveVerdict.mistake
+          : MoveVerdict.costly;
     }
     // Don't praise a move neither rank actually plays: a 0.3% vs 0.1% split is a
     // 3:1 ratio but says nothing useful.
@@ -125,6 +153,8 @@ class MoveFeedback {
     return MoveVerdict.typical;
   }
 
+  /// Only [MoveVerdict.mistake] halts, matching desktop: a costly move the target
+  /// rank plays is deliberately not flagged.
   bool get isMistake => verdict == MoveVerdict.mistake;
 }
 

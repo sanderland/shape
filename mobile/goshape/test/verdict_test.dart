@@ -42,6 +42,30 @@ void main() {
     expect(f.verdict, isNot(MoveVerdict.mistake));
   });
 
+  test('a costly move the target plays is its own verdict, not "typical"', () {
+    // It is not flagged and it does not halt, but the card must still lead with the
+    // cost: filing a two-point loss under "typical" tells the player less than the
+    // numbers know.
+    final f = fb(playerProb: 0.10, targetProb: 0.30, pointsLost: 2.3);
+    expect(f.verdict, MoveVerdict.costly);
+    expect(f.isMistake, isFalse, reason: 'still excused, per desktop');
+    expect(f.targetPlaysItToo, isTrue);
+  });
+
+  test('the excuse needs the target to really play it, not just relatively often',
+      () {
+    // 1.5% against 6% clears the posterior gate on ratio alone, but saying "your
+    // target plays it too" about a move it plays 1.5% of the time is an endorsement
+    // nobody made.
+    final f = fb(playerProb: 0.06, targetProb: 0.016, pointsLost: 2.0);
+    expect(f.moveLikeTarget, greaterThan(kTargetRankThreshold));
+    expect(f.verdict, MoveVerdict.costly);
+    expect(f.targetPlaysItToo, isFalse);
+
+    final solid = fb(playerProb: 0.06, targetProb: 0.05, pointsLost: 2.0);
+    expect(solid.targetPlaysItToo, isTrue);
+  });
+
   test('costly and rare is a mistake even if the ratio looks fine', () {
     // Both ranks under 1%: nobody plays this, so the ratio is meaningless.
     final f = fb(playerProb: 0.001, targetProb: 0.003, pointsLost: 3.0);
@@ -58,6 +82,14 @@ void main() {
   test('cheap move your own rank prefers is typical', () {
     final f = fb(playerProb: 0.30, targetProb: 0.05, pointsLost: 0.2);
     expect(f.verdict, MoveVerdict.typical);
+  });
+
+  test('a rare cheap move is not called typical', () {
+    // "Typical 5k move" was the one thing a move neither rank plays provably is not.
+    final f = fb(playerProb: 0.002, targetProb: 0.003, pointsLost: 0.1);
+    expect(f.isRare, isTrue);
+    expect(f.verdict, MoveVerdict.typical,
+        reason: 'still the fallback bucket -- the card distinguishes it by isRare');
   });
 
   test('a gain is never costly', () {

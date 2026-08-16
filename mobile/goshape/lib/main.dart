@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'board_painter.dart';
+import 'feedback_card.dart';
 import 'engine/analysis.dart';
 import 'game/shape_game.dart';
 
@@ -264,11 +265,14 @@ class _HomePageState extends State<HomePage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (_showCard(g)) ...[
-            _feedbackCard(g),
+            FeedbackCard(
+              feedback: g.feedback,
+              playerRank: g.playerRank,
+              targetRank: g.targetRank,
+              boardSize: g.boardSize,
+            ),
             const SizedBox(height: 8),
           ],
-          _ranksSummary(g, controlsEnabled),
-          const SizedBox(height: 8),
           _labelled('Feedback after your move', SegmentedButton<FeedbackMode>(
             segments: const [
               ButtonSegment(value: FeedbackMode.off, label: Text('Off')),
@@ -280,7 +284,7 @@ class _HomePageState extends State<HomePage> {
                 analysisEnabled ? (s) => g.setFeedbackMode(s.first) : null,
           )),
           const SizedBox(height: 6),
-          _labelled('Show the policy before you move', SegmentedButton<HeatmapMode>(
+          _labelled('Show policy', SegmentedButton<HeatmapMode>(
             segments: const [
               ButtonSegment(value: HeatmapMode.off, label: Text('Off')),
               ButtonSegment(value: HeatmapMode.yourRank, label: Text('Your rank')),
@@ -306,11 +310,13 @@ class _HomePageState extends State<HomePage> {
               child: OutlinedButton.icon(
                 onPressed: controlsEnabled ? () => _newGame(g) : null,
                 icon: const Icon(Icons.refresh),
-                label: Text('New game (${g.boardSize}×${g.boardSize})'),
+                label: const Text('New game'),
               ),
             ),
           ]),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
+          _ranksSummary(g, controlsEnabled),
+          const SizedBox(height: 4),
           DefaultTextStyle(
             style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.black54),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -424,116 +430,6 @@ class _HomePageState extends State<HomePage> {
             ]),
           ),
         ),
-      );
-
-  Widget _feedbackCard(ShapeGame g) {
-    final fb = g.feedback;
-    if (fb == null) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Welcome to SHAPE',
-                style: TextStyle(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            Text(
-              'Your moves are judged against how likely they are at '
-              '${rankLabel(g.playerRank)} and at ${rankLabel(g.targetRank)}.',
-              style: const TextStyle(fontSize: 12, color: Colors.black54),
-            ),
-          ]),
-        ),
-      );
-    }
-
-    final (color, headline) = switch (fb.verdict) {
-      MoveVerdict.mistake => (
-          const Color(0xFFE53935),
-          'Lost ${fb.pointsLost!.toStringAsFixed(1)} points',
-        ),
-      MoveVerdict.aboveYourLevel => (
-          const Color(0xFF0B6E2E),
-          'Above your level — a ${rankLabel(g.targetRank)} move',
-        ),
-      MoveVerdict.typical => (
-          const Color(0xFF37474F),
-          'Typical ${rankLabel(g.playerRank)} move',
-        ),
-    };
-
-    // Desktop's rule deliberately doesn't flag a costly move your target rank would
-    // also play; say so rather than silently dropping it.
-    final excused = fb.costly && fb.verdict != MoveVerdict.mistake;
-    final pl = fb.pointsLost;
-
-    return Card(
-      color: color.withValues(alpha: 0.08),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(
-              fb.isMistake ? Icons.warning_amber : Icons.check_circle_outline,
-              color: color,
-              size: 20,
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text('${coordLabel(fb.x, fb.y, g.boardSize)} · $headline',
-                  style: TextStyle(fontWeight: FontWeight.w700, color: color)),
-            ),
-          ]),
-          const SizedBox(height: 8),
-          _bar('${rankLabel(g.playerRank)} would play this', fb.playerProb, fb.playerRel),
-          _bar('${rankLabel(g.targetRank)} would play this', fb.targetProb, fb.targetRel),
-          const SizedBox(height: 4),
-          Text(
-            'Looks like ${rankLabel(g.targetRank)} rather than ${rankLabel(g.playerRank)}: '
-            '${(fb.moveLikeTarget * 100).toStringAsFixed(0)}%'
-            '${pl == null ? "" : "   ·   ${pl >= 0 ? "−" : "+"}${pl.abs().toStringAsFixed(1)} pts"}',
-            style: const TextStyle(fontSize: 12, color: Colors.black54),
-          ),
-          if (excused)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                'Costly, but ${rankLabel(g.targetRank)} would play it too — not flagged.',
-                style: const TextStyle(fontSize: 12, color: Colors.black54),
-              ),
-            ),
-          if (fb.isRare)
-            const Padding(
-              padding: EdgeInsets.only(top: 4),
-              child: Text('Rare move: under 1% at both ranks.',
-                  style: TextStyle(fontSize: 12, color: Colors.black54)),
-            ),
-        ]),
-      ),
-    );
-  }
-
-  Widget _bar(String label, double prob, double rel) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(children: [
-          SizedBox(width: 180, child: Text(label, style: const TextStyle(fontSize: 12))),
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(3),
-              child: LinearProgressIndicator(
-                value: rel.clamp(0.0, 1.0),
-                minHeight: 8,
-                backgroundColor: Colors.black12,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 46,
-            child: Text('${(prob * 100).toStringAsFixed(1)}%',
-                textAlign: TextAlign.right,
-                style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
-          ),
-        ]),
       );
 
   Widget _rankPicker(
