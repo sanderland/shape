@@ -352,7 +352,13 @@ class ShapeGame extends ChangeNotifier {
   /// score. "Mistakes only" costs the same as "all": you cannot know a move was a
   /// mistake without evaluating it.
   List<String> get activeProfiles {
-    final transient = autoplayOpponent && atTip && !humanToPlay && !gameOver;
+    // Transient means autoplay is about to move on from here, so the position
+    // exists for a moment. Deliberately not tied to being at the tip: a reply
+    // already in the tree is followed just as immediately as a freshly sampled one,
+    // and treating it as a position worth a heatmap would evaluate two profiles
+    // nobody sees. Browsing lands on your own moves when autoplay is on, so this
+    // does not quietly strip the heatmap from somewhere you can actually look.
+    final transient = autoplayOpponent && !humanToPlay && !gameOver;
     final needed = <String>{};
     if (transient) needed.add(opponentRank);
     if (wantsFeedback) {
@@ -588,7 +594,17 @@ class ShapeGame extends ChangeNotifier {
 
   Future<void> _maybeOpponentMove() async {
     if (!hasEngine) return;
-    if (!autoplayOpponent || gameOver || humanToPlay || busy || !atTip) return;
+    if (!autoplayOpponent || gameOver || humanToPlay || busy) return;
+
+    // Their answer to this position is already in the tree, so follow it. Sampling
+    // again would invent a second reply to a position they have already answered,
+    // and returning here instead would strand the game on their turn with the board
+    // refusing input until Forward was pressed by hand.
+    if (!atTip) {
+      await _goToNode(current.children.first);
+      return;
+    }
+
     busy = true;
     notifyListeners();
     try {

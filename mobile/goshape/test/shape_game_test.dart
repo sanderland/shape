@@ -168,6 +168,33 @@ void main() {
     expect(fake.calls, callsBefore, reason: 'its analyses were already there');
   });
 
+  test('replaying an explored move lets the opponent follow its known reply',
+      () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake, autoplay: true);
+    await g.start();
+    await g.playAt(2, 2);
+    expect(g.cursor, 2, reason: 'your move and their reply');
+    final reply = g.current;
+
+    await g.goFirst();
+    final callsBefore = fake.calls;
+    await g.playAt(2, 2);
+
+    expect(identical(g.current, reply), isTrue,
+        reason: 'the reply is already in the tree and should be resumed');
+    expect(g.cursor, 2);
+    expect(g.humanToPlay, isTrue,
+        reason: 'otherwise the board is dead until Forward is pressed by hand');
+    expect(fake.calls, callsBefore, reason: 'all of it was cached');
+    expect(reply.parent!.children.length, 1,
+        reason: 'resampling would invent a second answer to one position');
+
+    // And play carries on from there.
+    await g.playAt(4, 4);
+    expect(g.cursor, 4);
+  });
+
   test('the sgf carries the variations, not just the line you ended on', () async {
     final fake = FakeAnalyzer();
     final g = newGame(fake);
