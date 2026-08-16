@@ -197,17 +197,15 @@ class _HomePageState extends State<HomePage> {
         tooltip: 'Menu',
         position: PopupMenuPosition.under,
         onSelected: (v) async {
-          final target = game;
-          if (target == null) return;
           switch (v) {
             case 'pass':
-              await target.pass();
+              await g.pass();
             case 'first':
-              await target.goFirst();
+              await g.goFirst();
             case 'new':
-              await _newGame(target);
+              await _newGame(g);
             case 'ranks':
-              await _editRanks(target);
+              await _editRanks(g);
           }
         },
         itemBuilder: (_) => [
@@ -475,17 +473,17 @@ class _HomePageState extends State<HomePage> {
               _rankPicker('Your rank', g.playerRank, (v) async {
                 await g.setRanks(player: v);
                 setSheetState(() {});
-              }, enabled: true),
+              }),
               const SizedBox(height: 10),
               _rankPicker('Aiming at', g.targetRank, (v) async {
                 await g.setRanks(target: v);
                 setSheetState(() {});
-              }, enabled: true),
+              }),
               const SizedBox(height: 10),
               _rankPicker('Opponent', g.opponentRank, (v) async {
                 await g.setRanks(opponent: v);
                 setSheetState(() {});
-              }, enabled: true),
+              }),
             ]),
           ),
         ),
@@ -494,9 +492,8 @@ class _HomePageState extends State<HomePage> {
   Widget _rankPicker(
     String label,
     String value,
-    Future<void> Function(String) onChanged, {
-    required bool enabled,
-  }) =>
+    Future<void> Function(String) onChanged,
+  ) =>
       InputDecorator(
         decoration: InputDecoration(
           labelText: label,
@@ -511,11 +508,9 @@ class _HomePageState extends State<HomePage> {
             items: kRanks
                 .map((r) => DropdownMenuItem(value: r, child: Text(rankLabel(r))))
                 .toList(),
-            onChanged: enabled
-                ? (v) {
-                    if (v != null) onChanged(v);
-                  }
-                : null,
+            onChanged: (v) {
+              if (v != null) onChanged(v);
+            },
           ),
         ),
       );

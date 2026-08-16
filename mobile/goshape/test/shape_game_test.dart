@@ -279,10 +279,6 @@ void main() {
   });
 
   test('a full exchange evaluates 2 + 3 profiles, not 4 + 4', () async {
-    // Each profile is a ~250ms net call on a phone, so the per-position sets are
-    // deliberately minimal: the transient position while the opponent replies only
-    // needs the opponent's policy and the reference lead, and persistent positions
-    // never need the opponent's policy at all.
     final fake = FakeAnalyzer();
     final g = newGame(fake, autoplay: true);
     await g.start();
@@ -353,8 +349,6 @@ void main() {
 
   test('feedback describes your move while the opponent is to blame for the position',
       () async {
-    // The opponent replies at once, so keying feedback off "the move that produced
-    // this position" left the card empty for the whole of the player's turn.
     final fake = FakeAnalyzer();
     final g = newGame(fake, autoplay: true);
     g.feedbackMode = FeedbackMode.all;

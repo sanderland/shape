@@ -59,8 +59,8 @@ void main() {
   testWidgets('praise claims a comparison, not a rank', (tester) async {
     await show(tester, fb(playerProb: 0.05, targetProb: 0.30, pointsLost: 0.2));
     expect(find.text('D4 · More 2d than 5k'), findsOneWidget);
-    // "Above your level -- a 2d move" asserted the move belonged to one rank, and
-    // read as nonsense whenever the target was set below the player's own rank.
+    // A headline assigning the move to one rank ("above your level") reads as
+    // nonsense whenever the target is set below the player's own rank.
     expect(find.textContaining('Above your level'), findsNothing);
   });
 
@@ -81,7 +81,7 @@ void main() {
     expect(find.text('5k'), findsOneWidget);
     expect(find.text('2d'), findsOneWidget);
     expect(find.textContaining('would play this'), findsNothing);
-    // The posterior was a number derived from the two beside it.
+    // The posterior is derived from the two bars, so it is not shown as a number.
     expect(find.textContaining('Looks like'), findsNothing);
   });
 

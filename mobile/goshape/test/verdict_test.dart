@@ -85,7 +85,6 @@ void main() {
   });
 
   test('a rare cheap move is not called typical', () {
-    // "Typical 5k move" was the one thing a move neither rank plays provably is not.
     final f = fb(playerProb: 0.002, targetProb: 0.003, pointsLost: 0.1);
     expect(f.isRare, isTrue);
     expect(f.verdict, MoveVerdict.typical,
@@ -105,9 +104,8 @@ void main() {
   });
 
   test('a move both ranks like equally is NOT praised', () {
-    // Pins the praise boundary away from 0.5, which is the
-    // point of no evidence, so ~39% of the moves a 5k genuinely plays were
-    // labelled "above your level".
+    // Pins the praise boundary away from 0.5, the point of no evidence, where
+    // ~39% of the moves a 5k genuinely plays get labelled "above your level".
     final even = fb(playerProb: 0.10, targetProb: 0.105, pointsLost: 0.1);
     expect(even.moveLikeTarget, closeTo(0.512, 0.01));
     expect(even.verdict, MoveVerdict.typical);

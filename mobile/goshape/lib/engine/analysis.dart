@@ -143,9 +143,8 @@ class ShapeEngine implements Analyzer {
   /// The app runs on without an engine, so failing here costs feedback and the
   /// opponent, not the whole app.
   ///
-  /// Loading is not enough to earn use. The net must also reproduce what the
-  /// desktop export produced on the bundled position, because a net that is quietly
-  /// wrong produces feedback that looks entirely plausible and is not.
+  /// Loading is not enough: the net must also reproduce the desktop export on
+  /// the bundled position (see reference.dart).
   static Future<ShapeEngine> load({int posLen = 19}) async {
     if (await EngineTrial.crashedBefore()) {
       throw const EngineUnavailable(

@@ -37,10 +37,12 @@ class BoardGeometry {
       );
 }
 
+/// How many heatmap moves to paint; more would be unreadable noise.
+const int _kHeatmapTopN = 12;
+
 class BoardPainter extends CustomPainter {
   final Board board;
   final PolicyData? heatmap;
-  final int topN;
   final (int, int)? lastMove;
 
   /// The move the feedback card is talking about, ringed in [markColor].
@@ -66,7 +68,6 @@ class BoardPainter extends CustomPainter {
   BoardPainter({
     required this.board,
     this.heatmap,
-    this.topN = 12,
     this.lastMove,
     this.markedMove,
     this.markColor = const Color(0xFFE53935),
@@ -116,7 +117,7 @@ class BoardPainter extends CustomPainter {
       }
       idx.sort((a, b) =>
           h.probAt(b % n, b ~/ n).compareTo(h.probAt(a % n, a ~/ n)));
-      for (final i in idx.take(topN)) {
+      for (final i in idx.take(_kHeatmapTopN)) {
         final x = i % n, y = i ~/ n;
         final p = h.probAt(x, y);
         if (p <= 0.001) continue;

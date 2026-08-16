@@ -53,9 +53,8 @@ class FeedbackCard extends StatelessWidget {
     final pl = fb.pointsLost;
     final points = pl == null ? '' : pl.abs().toStringAsFixed(1);
 
-    // Every headline states what the numbers support and stops there. The cost
-    // leads whenever there is one, because a card that opens with a verdict and
-    // buries "lost 2.3 points" underneath is telling the player less than it knows.
+    // Every headline states what the numbers support and stops there, and the
+    // cost leads whenever there is one.
     final color = verdictColor(fb.verdict);
     final (headline, icon) = switch (fb.verdict) {
       MoveVerdict.mistake => ('Lost $points points', Icons.warning_amber),
@@ -95,8 +94,6 @@ class FeedbackCard extends StatelessWidget {
           const SizedBox(height: 8),
           _bar(rankLabel(playerRank), fb.playerProb, fb.playerRel),
           _bar(rankLabel(targetRank), fb.targetProb, fb.targetRel),
-          // The posterior is a number derived from the two directly above it, and
-          // its only job is to pick the headline, which is already there in words.
           if (pl != null && fb.verdict != MoveVerdict.mistake &&
               fb.verdict != MoveVerdict.costly)
             Padding(

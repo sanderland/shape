@@ -52,9 +52,6 @@ class EngineTrial {
     final f = await _handle();
     if (f.existsSync()) f.deleteSync();
   }
-
-  /// Lets the user ask for another attempt after, say, an app update.
-  static Future<void> reset() => survived();
 }
 
 class MnnRunner implements NetRunner {

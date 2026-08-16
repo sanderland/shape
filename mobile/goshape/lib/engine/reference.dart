@@ -47,8 +47,6 @@ class ReferencePosition {
     this.expectedPolicy,
   );
 
-  FeatureResult get features => FeatureResult(bin, global);
-
   /// Which profile the reference outputs were generated under.
   static const String profile = 'rank_5k';
 

@@ -34,18 +34,16 @@ const double kMaxProbThreshold = 0.01;
 /// Posterior needed to call a move "above your level" — 0.667, i.e. the target
 /// rank is twice as likely to play it as your rank.
 ///
-/// This was 0.5, which is the point of *no evidence*: a move both ranks like
-/// equally cleared it. Calibrated over 80 positions of realistic rank_5k
-/// self-play (tools/onnx_export/calibrate_verdict.py), player 5k / target 2d,
-/// showing the fraction of moves each rank would really play that clear a
-/// given threshold:
+/// 0.5 is the point of *no evidence*: a move both ranks like equally clears it,
+/// so nearly two in five of the player's own ordinary moves get praised.
+/// Calibrated over 80 positions of realistic rank_5k self-play
+/// (tools/onnx_export/calibrate_verdict.py), player 5k / target 2d, showing the
+/// fraction of moves each rank would really play that clear a given threshold:
 ///
 ///   threshold   flags 5k moves   flags 2d moves   lift
-///   0.50             38.8%            75.0%       1.94   <- was here
+///   0.50             38.8%            75.0%       1.94
 ///   0.60              7.5%            43.8%       5.83
-///   0.667             2.5%            26.2%      10.50   <- now here
-///
-/// At 0.5 nearly two in five of the player's own ordinary moves were praised.
+///   0.667             2.5%            26.2%      10.50   <- chosen
 const double kAboveTargetThreshold = 0.667;
 
 /// How often the target rank must actually play a move before "your target plays
@@ -173,9 +171,7 @@ const List<int> kBoardSizes = [9, 13, 19];
 /// A node in the game tree: the position reached by playing [move] from [parent].
 ///
 /// A tree rather than a list because playing from a position you have browsed back
-/// to should add a branch, not delete what was there. That is what an SGF variation
-/// is, and it is the difference between exploring an alternative and destroying the
-/// game you were reviewing.
+/// to should add a branch — an SGF variation — not delete what was there.
 class GameNode {
   final GameNode? parent;
 
@@ -245,10 +241,9 @@ class NextMove {
 
 class ShapeGame extends ChangeNotifier {
   /// Null when the engine could not start. The board still works without it: you
-  /// place stones for both sides and get no feedback, which beats no app at all.
+  /// place stones for both sides and get no feedback.
   final Analyzer? engine;
 
-  /// Not final: [newGame] can change it.
   int boardSize;
   final math.Random rng;
 
@@ -342,22 +337,17 @@ class ShapeGame extends ChangeNotifier {
   /// allows: each one is a full net call (~250ms on a phone).
   ///
   /// A position where the opponent is about to reply is transient -- the reply
-  /// lands moments later -- so it only needs what that moment uses: the
-  /// opponent's policy to sample from, and the reference lead so points-lost can
-  /// be computed for the move just played. Player/target there would only feed a
-  /// heatmap nobody sees, and fill in lazily if you browse back.
+  /// lands moments later -- so it only needs the opponent's policy to sample from
+  /// and the reference lead for points-lost. Player/target there would only feed
+  /// a heatmap nobody sees, and fill in lazily if you browse back.
   ///
-  /// With feedback and the heatmap both off an exchange costs two evaluations:
-  /// the opponent's policy to reply from, and the reference profile behind the
-  /// score. "Mistakes only" costs the same as "all": you cannot know a move was a
+  /// "Mistakes only" costs the same as "all": you cannot know a move was a
   /// mistake without evaluating it.
   List<String> get activeProfiles {
-    // Transient means autoplay is about to move on from here, so the position
-    // exists for a moment. Deliberately not tied to being at the tip: a reply
-    // already in the tree is followed just as immediately as a freshly sampled one,
-    // and treating it as a position worth a heatmap would evaluate two profiles
-    // nobody sees. Browsing lands on your own moves when autoplay is on, so this
-    // does not quietly strip the heatmap from somewhere you can actually look.
+    // Transient is deliberately not tied to being at the tip: a reply already in
+    // the tree is followed just as immediately as a freshly sampled one. Browsing
+    // lands on your own moves when autoplay is on, so this does not strip the
+    // heatmap from anywhere you can actually look.
     final transient = autoplayOpponent && !humanToPlay && !gameOver;
     final needed = <String>{};
     if (transient) needed.add(opponentRank);
@@ -367,9 +357,8 @@ class ShapeGame extends ChangeNotifier {
     }
     if (!transient) {
       // The score estimate is always shown, so the profile behind it is always
-      // evaluated -- one extra call per move, and only when feedback is off, since
-      // feedback needs the same profile anyway. Transient positions are skipped:
-      // the opponent's reply lands before anyone could read a score off them.
+      // evaluated -- except at transient positions, where the reply lands before
+      // anyone could read a score.
       needed.add(kReferenceProfile);
       final hm = heatmapProfile;
       if (hm != null) needed.add(hm);
@@ -409,8 +398,7 @@ class ShapeGame extends ChangeNotifier {
     return current.move?.isPass == true && prev?.isPass == true;
   }
 
-  ProfileAnalysis? analysisFor(String profile, {GameNode? at}) =>
-      (at ?? current).analyses[profile];
+  ProfileAnalysis? analysisFor(String profile) => current.analyses[profile];
 
   GoPosition _positionFor(GameNode node) {
     final p = GoPosition(boardSize, Rules.japanese);
@@ -425,7 +413,7 @@ class ShapeGame extends ChangeNotifier {
     await _maybeOpponentMove();
   }
 
-  /// Analyze position [idx] for [profiles], skipping anything already cached.
+  /// Analyze [node] for [profiles], skipping anything already cached.
   ///
   /// The position is built lazily: replaying the line to rebuild it is not free,
   /// and browsing history is almost always a pure cache hit.
@@ -575,8 +563,6 @@ class ShapeGame extends ChangeNotifier {
 
     try {
       _reviewReturn = null;
-      // Playing from a position you browsed back to branches: what was there stays
-      // reachable as a variation, with its analyses, instead of being deleted.
       final mover = pos.nextPlayer;
       pos.play(mover, loc);
       current = current.childFor(Move(mover, loc));
@@ -781,23 +767,10 @@ class ShapeGame extends ChangeNotifier {
     playerRank = player ?? playerRank;
     opponentRank = opponent ?? opponentRank;
     targetRank = target ?? targetRank;
-    notifyListeners();
-    if (busy) return;
-    busy = true;
-    notifyListeners();
-    try {
-      await _analyzeCurrent();
-      await _updateFeedback();
-    } finally {
-      busy = false;
-      notifyListeners();
-    }
+    await _refresh();
   }
 
   /// SGF for the whole tree, variations and all.
-  ///
-  /// The point of the tree is that an explored continuation is not thrown away, so
-  /// writing only the current line would throw it away on the way out.
   String toSgf() {
     final b = StringBuffer('(;GM[1]FF[4]CA[UTF-8]SZ[$boardSize]KM[6.5]RU[Japanese]');
     b.write('PB[${humanColor == Board.black ? rankLabel(playerRank) : rankLabel(opponentRank)}]');
