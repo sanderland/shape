@@ -170,6 +170,79 @@ class MoveFeedback {
 /// it too.
 const List<int> kBoardSizes = [9, 13, 19];
 
+/// A node in the game tree: the position reached by playing [move] from [parent].
+///
+/// A tree rather than a list because playing from a position you have browsed back
+/// to should add a branch, not delete what was there. That is what an SGF variation
+/// is, and it is the difference between exploring an alternative and destroying the
+/// game you were reviewing.
+class GameNode {
+  final GameNode? parent;
+
+  /// Null at the root, which is the empty board.
+  final Move? move;
+  final List<GameNode> children = [];
+
+  /// Cached per node, so a variation keeps its own evaluations and revisiting a
+  /// position costs nothing.
+  final Map<String, ProfileAnalysis> analyses = {};
+
+  GameNode({this.parent, this.move});
+
+  bool get isRoot => parent == null;
+
+  int get depth {
+    var d = 0;
+    for (var n = this; n.parent != null; n = n.parent!) {
+      d++;
+    }
+    return d;
+  }
+
+  /// Moves from the root down to here.
+  List<Move> get path {
+    final out = <Move>[];
+    for (var n = this; n.parent != null; n = n.parent!) {
+      out.add(n.move!);
+    }
+    return out.reversed.toList(growable: false);
+  }
+
+  /// The child for [move], reusing the existing one so replaying a move you have
+  /// already explored returns to it -- with its analyses -- instead of duplicating.
+  GameNode childFor(Move move) {
+    for (final c in children) {
+      if (c.move!.loc == move.loc && c.move!.pla == move.pla) return c;
+    }
+    final child = GameNode(parent: this, move: move);
+    children.add(child);
+    return child;
+  }
+
+  /// Following the first child at each step, which is the main line.
+  GameNode get endOfMainLine {
+    var n = this;
+    while (n.children.isNotEmpty) {
+      n = n.children.first;
+    }
+    return n;
+  }
+}
+
+/// A move that continues from the current position, for the board to show.
+class NextMove {
+  final int x;
+  final int y;
+
+  /// Null when the move has not been evaluated, or is the opponent's.
+  final MoveVerdict? verdict;
+
+  /// Whether this is the continuation navigation will follow.
+  final bool isMainLine;
+
+  const NextMove(this.x, this.y, this.verdict, this.isMainLine);
+}
+
 class ShapeGame extends ChangeNotifier {
   /// Null when the engine could not start. The board still works without it: you
   /// place stones for both sides and get no feedback, which beats no app at all.
@@ -179,13 +252,44 @@ class ShapeGame extends ChangeNotifier {
   int boardSize;
   final math.Random rng;
 
-  /// The whole game; [cursor] is how many of these are on the board.
-  final List<Move> line = [];
-  int cursor = 0;
+  /// The empty board. Everything played hangs off it.
+  GameNode root = GameNode();
+
+  /// Where you are looking.
+  GameNode current = GameNode();
+
   late GoPosition pos;
 
-  /// analyses[moveIndex][profile]
-  final Map<int, Map<String, ProfileAnalysis>> analyses = {};
+  /// Moves from the root to [current]; its length is [cursor].
+  List<Move> get line => current.path;
+  int get cursor => current.depth;
+
+  /// The whole line through the current node: back to the root, then on down the
+  /// main line. Navigation and mistake-hunting move along this.
+  List<GameNode> get currentLine {
+    final back = <GameNode>[];
+    for (var n = current; n.parent != null; n = n.parent!) {
+      back.add(n);
+    }
+    final out = back.reversed.toList();
+    for (var n = current; n.children.isNotEmpty;) {
+      n = n.children.first;
+      out.add(n);
+    }
+    return out;
+  }
+
+  /// Moves continuing from here, so the board can show what has been explored.
+  List<NextMove> get nextMoves => [
+        for (final c in current.children)
+          if (!c.move!.isPass)
+            NextMove(
+              pos.board.locX(c.move!.loc),
+              pos.board.locY(c.move!.loc),
+              feedbackFor(c)?.verdict,
+              identical(c, current.children.first),
+            ),
+      ];
 
   String playerRank = 'rank_5k';
   String opponentRank = 'rank_1k';
@@ -230,6 +334,7 @@ class ShapeGame extends ChangeNotifier {
 
   ShapeGame(this.engine, {this.boardSize = 19, math.Random? random})
       : rng = random ?? math.Random() {
+    current = root;
     pos = GoPosition(boardSize, Rules.japanese);
   }
 
@@ -272,34 +377,39 @@ class ShapeGame extends ChangeNotifier {
 
   /// True when the move that produced this position was the opponent passing.
   /// Easy to miss otherwise: a pass puts no stone on the board.
-  bool get opponentJustPassed =>
-      cursor > 0 && line[cursor - 1].isPass && line[cursor - 1].pla != humanColor;
+  bool get opponentJustPassed {
+    final m = current.move;
+    return m != null && m.isPass && m.pla != humanColor;
+  }
 
   /// Score estimate for the current position in points for Black, or null if it
   /// has not been evaluated. From the reference profile's lead head, which is a
   /// net estimate with no search behind it -- good enough to say who is ahead and
   /// roughly by how much, and labelled as an estimate wherever it is shown.
   double? get scoreLeadForBlack {
-    final a = analyses[cursor]?[kReferenceProfile];
+    final a = current.analyses[kReferenceProfile];
     if (a == null) return null;
     // lead is from the side to move's point of view.
     return pos.nextPlayer == Board.black ? a.lead : -a.lead;
   }
 
-  bool get atTip => cursor == line.length;
-  bool get canGoBack => cursor > 0;
-  bool get canGoForward => cursor < line.length;
+  bool get atTip => current.children.isEmpty;
+  bool get canGoBack => !current.isRoot;
+  bool get canGoForward => current.children.isNotEmpty;
   bool get humanToPlay => !hasEngine || pos.nextPlayer == humanColor;
-  bool get gameOver =>
-      cursor >= 2 && line[cursor - 1].isPass && line[cursor - 2].isPass;
 
-  ProfileAnalysis? analysisFor(String profile, {int? atMove}) =>
-      analyses[atMove ?? cursor]?[profile];
+  bool get gameOver {
+    final prev = current.parent?.move;
+    return current.move?.isPass == true && prev?.isPass == true;
+  }
 
-  GoPosition _positionAt(int idx) {
+  ProfileAnalysis? analysisFor(String profile, {GameNode? at}) =>
+      (at ?? current).analyses[profile];
+
+  GoPosition _positionFor(GameNode node) {
     final p = GoPosition(boardSize, Rules.japanese);
-    for (var i = 0; i < idx; i++) {
-      p.play(line[i].pla, line[i].loc);
+    for (final m in node.path) {
+      p.play(m.pla, m.loc);
     }
     return p;
   }
@@ -314,19 +424,18 @@ class ShapeGame extends ChangeNotifier {
   /// The position is built lazily: replaying the line to rebuild it is not free,
   /// and browsing history is almost always a pure cache hit.
   Future<void> _analyze(
-    int idx,
+    GameNode node,
     GoPosition Function() buildPosition,
     List<String> profiles,
   ) async {
     if (!hasEngine) return;
-    final want =
-        profiles.where((x) => !(analyses[idx]?.containsKey(x) ?? false)).toList();
+    final want = profiles.where((x) => !node.analyses.containsKey(x)).toList();
     if (want.isEmpty) return;
     final sw = Stopwatch()..start();
     try {
       final result = await engine!.analyze(buildPosition(), want);
       analysisMs = sw.elapsedMilliseconds;
-      (analyses[idx] ??= {}).addAll(result);
+      node.analyses.addAll(result);
     } catch (e) {
       // Inference failing once means it will fail again, so stop asking and say so
       // rather than erroring on every move from here on.
@@ -335,7 +444,7 @@ class ShapeGame extends ChangeNotifier {
     }
   }
 
-  Future<void> _analyzeCurrent() => _analyze(cursor, () => pos, activeProfiles);
+  Future<void> _analyzeCurrent() => _analyze(current, () => pos, activeProfiles);
 
   /// Points the side that just moved gave up, per the reference profile.
   ///
@@ -346,9 +455,9 @@ class ShapeGame extends ChangeNotifier {
   /// a stone costs a point. Measured on the empty board: tengen 0.87, D4 0.96,
   /// Q16 1.14, against B2 2.69 and A1 6.13. Without this every normal move reads as
   /// a ~1 point mistake.
-  double? _pointsLost(int beforeIdx, {required bool wasPass}) {
-    final before = analyses[beforeIdx]?[kReferenceProfile];
-    final after = analyses[beforeIdx + 1]?[kReferenceProfile];
+  double? _pointsLost(GameNode moveNode, {required bool wasPass}) {
+    final before = moveNode.parent?.analyses[kReferenceProfile];
+    final after = moveNode.analyses[kReferenceProfile];
     if (before == null || after == null) return null;
     final offset =
         (pos.rules.scoringRule == 'SCORING_TERRITORY' && !wasPass) ? 1.0 : 0.0;
@@ -363,31 +472,30 @@ class ShapeGame extends ChangeNotifier {
   Future<void> _updateFeedback() async {
     feedback = null;
     if (!wantsFeedback || !hasEngine) return;
-    final beforeIdx = lastOwnMoveIndex;
-    if (beforeIdx == null) return;
+    final node = lastOwnMove;
+    if (node == null) return;
 
     // Usually both are cached from when the move was played; this only does work if
     // feedback was off then, or the ranks have changed since. The position after the
     // move contributes only its reference lead, for points-lost -- every probability
     // comes from the position you faced before playing.
-    await _analyze(beforeIdx, () => _positionAt(beforeIdx), _feedbackProfiles);
-    await _analyze(beforeIdx + 1, () => _positionAt(beforeIdx + 1),
-        const [kReferenceProfile]);
+    final before = node.parent!;
+    await _analyze(before, () => _positionFor(before), _feedbackProfiles);
+    await _analyze(node, () => _positionFor(node), const [kReferenceProfile]);
 
-    feedback = feedbackFor(beforeIdx);
+    feedback = feedbackFor(node);
   }
 
-  /// How the move at [moveIdx] looks, from analyses already cached.
+  /// How the move arriving at [node] looks, from analyses already cached.
   ///
   /// Returns null when it is not yours, was a pass, or has not been evaluated --
   /// this reads the cache and never triggers work, so it is safe to call for every
-  /// move in the game.
-  MoveFeedback? feedbackFor(int moveIdx) {
-    if (moveIdx < 0 || moveIdx >= line.length) return null;
-    final move = line[moveIdx];
-    if (move.pla != humanColor || move.isPass) return null;
+  /// node in the tree.
+  MoveFeedback? feedbackFor(GameNode node) {
+    final move = node.move;
+    if (move == null || move.pla != humanColor || move.isPass) return null;
 
-    final before = analyses[moveIdx];
+    final before = node.parent?.analyses;
     final player = before?[playerRank];
     final target = before?[targetRank];
     if (player == null || target == null) return null;
@@ -405,44 +513,39 @@ class ShapeGame extends ChangeNotifier {
       targetProb: tProb,
       targetRel: tRel,
       moveLikeTarget: posteriorLikeTarget(pProb, tProb),
-      pointsLost: _pointsLost(moveIdx, wasPass: false),
+      pointsLost: _pointsLost(node, wasPass: false),
     );
   }
 
-  /// Indices of your moves already known to be mistakes.
+  /// Your moves along the current line already known to be mistakes.
   ///
   /// Known, not all: a move is judged from cached analyses, which exist for every
   /// move played while feedback was on. Moves never evaluated are skipped rather
   /// than evaluated now, because scanning a whole game would cost a few hundred
   /// milliseconds per move and freeze the button that asked for it.
-  List<int> get knownMistakes => [
-        for (var i = 0; i < line.length; i++)
-          if (feedbackFor(i)?.isMistake ?? false) i,
-      ];
+  List<GameNode> get knownMistakes =>
+      [for (final n in currentLine) if (feedbackFor(n)?.isMistake ?? false) n];
 
-  /// Cursor position that shows [moveIdx] as the move just played.
-  int _cursorShowing(int moveIdx) => moveIdx + 1;
-
-  int? get nextMistake {
-    for (final i in knownMistakes) {
-      if (_cursorShowing(i) > cursor) return i;
+  GameNode? get nextMistake {
+    for (final n in knownMistakes) {
+      if (n.depth > cursor) return n;
     }
     return null;
   }
 
-  int? get previousMistake {
-    int? found;
-    for (final i in knownMistakes) {
-      if (_cursorShowing(i) < cursor) found = i;
+  GameNode? get previousMistake {
+    GameNode? found;
+    for (final n in knownMistakes) {
+      if (n.depth < cursor) found = n;
     }
     return found;
   }
 
   /// Jump so the mistake is the move just played, which is what the card describes.
   Future<void> goToMistake({required bool forward}) async {
-    final idx = forward ? nextMistake : previousMistake;
-    if (idx == null) return;
-    await _goTo(_cursorShowing(idx));
+    final node = forward ? nextMistake : previousMistake;
+    if (node == null) return;
+    await _goToNode(node);
   }
 
   Future<void> playAt(int x, int y) async {
@@ -466,15 +569,11 @@ class ShapeGame extends ChangeNotifier {
 
     try {
       _reviewReturn = null;
-      // Playing while browsing history discards the moves and analysis after here.
-      if (!atTip) {
-        line.removeRange(cursor, line.length);
-        analyses.removeWhere((moveIndex, _) => moveIndex > cursor);
-      }
+      // Playing from a position you browsed back to branches: what was there stays
+      // reachable as a variation, with its analyses, instead of being deleted.
       final mover = pos.nextPlayer;
       pos.play(mover, loc);
-      line.add(Move(mover, loc));
-      cursor = line.length;
+      current = current.childFor(Move(mover, loc));
       await _analyzeCurrent();
       await _updateFeedback();
     } catch (e) {
@@ -493,8 +592,8 @@ class ShapeGame extends ChangeNotifier {
     busy = true;
     notifyListeners();
     try {
-      await _analyze(cursor, () => pos, [opponentRank]);
-      final analysis = analyses[cursor]?[opponentRank];
+      await _analyze(current, () => pos, [opponentRank]);
+      final analysis = current.analyses[opponentRank];
       if (analysis != null) {
         final candidates = analysis.policy.sample(
           topK: topK,
@@ -517,8 +616,7 @@ class ShapeGame extends ChangeNotifier {
         }
         final mover = pos.nextPlayer;
         pos.play(mover, loc);
-        line.add(Move(mover, loc));
-        cursor = line.length;
+        current = current.childFor(Move(mover, loc));
         await _analyzeCurrent();
       }
     } catch (e) {
@@ -531,18 +629,17 @@ class ShapeGame extends ChangeNotifier {
 
   // ---- navigation ----
 
-  Future<void> _goTo(int target, {bool keepReview = false}) async {
+  Future<void> _goToNode(GameNode target, {bool keepReview = false}) async {
     if (busy) return;
     if (!keepReview) _reviewReturn = null;
-    final t = target.clamp(0, line.length);
     busy = true;
     notifyListeners();
     try {
-      // Still re-analyzes when the cursor has not moved: entering or leaving review
+      // Still re-analyzes when the node has not changed: entering or leaving review
       // changes which policy the board needs even when it lands where it started.
-      if (t != cursor) {
-        cursor = t;
-        pos = _positionAt(cursor);
+      if (!identical(target, current)) {
+        current = target;
+        pos = _positionFor(current);
       }
       await _analyzeCurrent();
       await _updateFeedback();
@@ -554,18 +651,18 @@ class ShapeGame extends ChangeNotifier {
     }
   }
 
-  /// Index of the last move you played at or before the cursor, or null.
-  int? get lastOwnMoveIndex {
-    for (var i = cursor - 1; i >= 0; i--) {
-      if (line[i].pla == humanColor && !line[i].isPass) return i;
+  /// The last move you played at or before the cursor, or null.
+  GameNode? get lastOwnMove {
+    for (var n = current; n.parent != null; n = n.parent!) {
+      if (n.move!.pla == humanColor && !n.move!.isPass) return n;
     }
     return null;
   }
 
-  bool get canReviewOwnMove => lastOwnMoveIndex != null || reviewing;
+  bool get canReviewOwnMove => lastOwnMove != null || reviewing;
 
   /// Where review was entered from, so leaving it puts everything back.
-  ({int cursor, HeatmapMode heatmap})? _reviewReturn;
+  ({GameNode node, HeatmapMode heatmap})? _reviewReturn;
 
   bool get reviewing => _reviewReturn != null;
 
@@ -581,31 +678,47 @@ class ShapeGame extends ChangeNotifier {
     if (ret != null) {
       _reviewReturn = null;
       heatmapMode = ret.heatmap;
-      await _goTo(ret.cursor, keepReview: true);
+      await _goToNode(ret.node, keepReview: true);
       return;
     }
-    final idx = lastOwnMoveIndex;
-    if (idx == null) return;
-    _reviewReturn = (cursor: cursor, heatmap: heatmapMode);
+    final own = lastOwnMove;
+    if (own == null) return;
+    _reviewReturn = (node: current, heatmap: heatmapMode);
     heatmapMode = HeatmapMode.target;
-    await _goTo(idx, keepReview: true);
+    // The position you faced is the one before the move, so step to its parent.
+    await _goToNode(own.parent!, keepReview: true);
   }
 
-  Future<void> goFirst() => _goTo(0);
-  Future<void> goLast() => _goTo(line.length);
+  GameNode _up(GameNode from, int steps) {
+    var n = from;
+    for (var i = 0; i < steps && n.parent != null; i++) {
+      n = n.parent!;
+    }
+    return n;
+  }
+
+  GameNode _down(GameNode from, int steps) {
+    var n = from;
+    for (var i = 0; i < steps && n.children.isNotEmpty; i++) {
+      n = n.children.first;
+    }
+    return n;
+  }
+
+  Future<void> goFirst() => _goToNode(root);
+  Future<void> goLast() => _goToNode(current.endOfMainLine);
 
   /// Step back one exchange, so you land on your own move rather than the reply.
-  Future<void> goPrev() => _goTo(cursor - (autoplayOpponent && cursor >= 2 ? 2 : 1));
-  Future<void> goNext() => _goTo(cursor + (autoplayOpponent && cursor + 2 <= line.length ? 2 : 1));
+  Future<void> goPrev() => _goToNode(_up(current, autoplayOpponent ? 2 : 1));
+  Future<void> goNext() => _goToNode(_down(current, autoplayOpponent ? 2 : 1));
 
   Future<void> newGame({int? size}) async {
     if (busy) return;
     busy = true;
     notifyListeners();
     try {
-      line.clear();
-      cursor = 0;
-      analyses.clear();
+      root = GameNode();
+      current = root;
       _reviewReturn = null;
       feedback = null;
       error = null;
@@ -665,22 +778,44 @@ class ShapeGame extends ChangeNotifier {
     }
   }
 
-  /// SGF for the whole game, not just the browsed prefix.
+  /// SGF for the whole tree, variations and all.
+  ///
+  /// The point of the tree is that an explored continuation is not thrown away, so
+  /// writing only the current line would throw it away on the way out.
   String toSgf() {
     final b = StringBuffer('(;GM[1]FF[4]CA[UTF-8]SZ[$boardSize]KM[6.5]RU[Japanese]');
     b.write('PB[${humanColor == Board.black ? rankLabel(playerRank) : rankLabel(opponentRank)}]');
     b.write('PW[${humanColor == Board.white ? rankLabel(playerRank) : rankLabel(opponentRank)}]');
-    for (final m in line) {
-      final tag = m.pla == Board.black ? 'B' : 'W';
-      if (m.isPass) {
-        b.write(';$tag[]');
-      } else {
-        final x = pos.board.locX(m.loc);
-        final y = pos.board.locY(m.loc);
-        b.write(';$tag[${String.fromCharCode(97 + x)}${String.fromCharCode(97 + y)}]');
-      }
-    }
+    _writeSgfChildren(b, root);
     b.write(')');
     return b.toString();
+  }
+
+  void _writeSgfChildren(StringBuffer b, GameNode node) {
+    var n = node;
+    while (n.children.isNotEmpty) {
+      // A single continuation stays in the same sequence; a branch point opens one
+      // parenthesised variation per child, which is what SGF readers expect.
+      if (n.children.length == 1) {
+        b.write(_sgfMove(n.children.first.move!));
+        n = n.children.first;
+        continue;
+      }
+      for (final c in n.children) {
+        b.write('(');
+        b.write(_sgfMove(c.move!));
+        _writeSgfChildren(b, c);
+        b.write(')');
+      }
+      return;
+    }
+  }
+
+  String _sgfMove(Move m) {
+    final tag = m.pla == Board.black ? 'B' : 'W';
+    if (m.isPass) return ';$tag[]';
+    final x = pos.board.locX(m.loc);
+    final y = pos.board.locY(m.loc);
+    return ';$tag[${String.fromCharCode(97 + x)}${String.fromCharCode(97 + y)}]';
   }
 }

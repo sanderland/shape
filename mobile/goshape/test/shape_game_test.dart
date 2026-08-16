@@ -117,7 +117,7 @@ ShapeGame newGame(FakeAnalyzer fake, {bool autoplay = false}) {
 }
 
 void main() {
-  test('branching discards analyses for the abandoned continuation', () async {
+  test('branching keeps the old continuation as a variation', () async {
     final fake = FakeAnalyzer();
     final g = newGame(fake);
     await g.start();
@@ -126,25 +126,61 @@ void main() {
     await g.playAt(4, 4);
     await g.playAt(6, 6);
     expect(g.line.length, 3);
-    expect(g.analyses.keys.toSet(), {0, 1, 2, 3});
+    final original = g.current;
 
     await g.goFirst();
     expect(g.cursor, 0);
 
-    // A different first move: everything after the branch point is a different game.
+    // A different first move branches rather than deleting what was there.
     await g.playAt(8, 8);
     expect(g.line.length, 1);
+    expect(g.root.children.length, 2, reason: 'two first moves now exist');
 
-    expect(g.analyses.keys.where((k) => k > 1), isEmpty,
-        reason: 'analyses past the branch point must be dropped');
+    // The abandoned line is still whole, still reachable, still analysed.
+    var n = g.root.children.first;
+    expect(n.path.map((m) => g.pos.board.locX(m.loc)), [2]);
+    expect(n.endOfMainLine.depth, 3);
+    expect(identical(n.endOfMainLine, original), isTrue);
+    expect(n.analyses, isNotEmpty, reason: 'its evaluations survive too');
 
-    // Every surviving analysis must describe the line we are actually on.
-    for (final entry in g.analyses.entries) {
-      final expected = encodeLine(_replay(g, entry.key));
-      for (final a in entry.value.values) {
-        expect(a.lead, expected, reason: 'stale analysis cached at ${entry.key}');
+    // And every node still describes its own line, not a neighbour's.
+    for (final node in [g.root, ...g.root.children]) {
+      for (final a in node.analyses.values) {
+        expect(a.lead, encodeLine(_replayNode(g, node)));
       }
     }
+  });
+
+  test('replaying a move you already explored returns to it, cache and all',
+      () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake);
+    await g.start();
+    await g.playAt(2, 2);
+    final first = g.current;
+
+    await g.goFirst();
+    final callsBefore = fake.calls;
+    await g.playAt(2, 2);
+
+    expect(identical(g.current, first), isTrue, reason: 'same node, not a duplicate');
+    expect(g.root.children.length, 1);
+    expect(fake.calls, callsBefore, reason: 'its analyses were already there');
+  });
+
+  test('the sgf carries the variations, not just the line you ended on', () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake);
+    await g.start();
+    await g.playAt(2, 2);
+    await g.goFirst();
+    await g.playAt(8, 8);
+
+    final sgf = g.toSgf();
+    // Both first moves must be present, each in its own parenthesised variation.
+    expect(sgf, contains(';B[cc]'));
+    expect(sgf, contains(';B[ii]'));
+    expect('('.allMatches(sgf).length, greaterThan(1));
   });
 
   test('browsing history does no analysis work', () async {
@@ -450,16 +486,17 @@ void main() {
 
     final mistakes = g.knownMistakes;
     expect(mistakes, isNotEmpty, reason: 'the fake should produce some');
-    // Only your own moves, and always in order.
-    for (final i in mistakes) {
-      expect(g.line[i].pla, g.humanColor);
+    // Only your own moves, and always in playing order.
+    for (final n in mistakes) {
+      expect(n.move!.pla, g.humanColor);
     }
-    expect(mistakes, orderedEquals(mistakes.toList()..sort()));
+    final depths = mistakes.map((n) => n.depth).toList();
+    expect(depths, orderedEquals(depths.toList()..sort()));
 
     await g.goFirst();
     await g.goToMistake(forward: true);
     final first = mistakes.first;
-    expect(g.cursor, first + 1,
+    expect(g.cursor, first.depth,
         reason: 'the mistake must be the move just played, or the card shows another');
     expect(g.feedback, isNotNull);
     expect(g.feedback!.isMistake, isTrue);
@@ -467,9 +504,9 @@ void main() {
     // Forward then back returns to where it started.
     if (mistakes.length > 1) {
       await g.goToMistake(forward: true);
-      expect(g.cursor, mistakes[1] + 1);
+      expect(g.cursor, mistakes[1].depth);
       await g.goToMistake(forward: false);
-      expect(g.cursor, first + 1);
+      expect(g.cursor, first.depth);
     }
 
     await g.goLast();
@@ -490,6 +527,39 @@ void main() {
     expect(g.knownMistakes, isEmpty);
     expect(g.nextMistake, isNull);
     expect(g.previousMistake, isNull);
+  });
+
+  test('the board is told about every explored continuation', () async {
+    final fake = FakeAnalyzer();
+    final g = ShapeGame(fake, boardSize: 9, random: Random(1));
+    g.autoplayOpponent = false;
+    await g.start();
+
+    expect(g.nextMoves, isEmpty, reason: 'nothing explored yet');
+
+    await g.playAt(2, 2);
+    await g.goFirst();
+    expect(g.nextMoves.map((n) => (n.x, n.y)), [(2, 2)]);
+    expect(g.nextMoves.single.isMainLine, isTrue);
+
+    await g.playAt(8, 8);
+    await g.goFirst();
+    final shown = g.nextMoves;
+    expect(shown.map((n) => (n.x, n.y)), [(2, 2), (8, 8)]);
+    expect(shown.map((n) => n.isMainLine), [true, false],
+        reason: 'only the first child is the line navigation follows');
+  });
+
+  test('a pass is not drawn on the board as a continuation', () async {
+    final fake = FakeAnalyzer();
+    final g = ShapeGame(fake, boardSize: 9, random: Random(1));
+    g.autoplayOpponent = false;
+    await g.start();
+    await g.pass();
+    await g.goFirst();
+
+    expect(g.current.children.length, 1, reason: 'the pass is in the tree');
+    expect(g.nextMoves, isEmpty, reason: 'but it has no point to draw');
   });
 
   test('review is unavailable before you have moved', () async {
@@ -533,11 +603,11 @@ void main() {
   });
 }
 
-/// Rebuild the position after [n] moves of the game's current line.
-GoPosition _replay(ShapeGame g, int n) {
+/// Rebuild the position at [node], wherever in the tree it sits.
+GoPosition _replayNode(ShapeGame g, GameNode node) {
   final p = GoPosition(g.boardSize, Rules.japanese);
-  for (var i = 0; i < n; i++) {
-    p.play(g.line[i].pla, g.line[i].loc);
+  for (final m in node.path) {
+    p.play(m.pla, m.loc);
   }
   return p;
 }

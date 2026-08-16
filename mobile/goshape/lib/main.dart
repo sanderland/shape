@@ -330,6 +330,19 @@ class _HomePageState extends State<HomePage> {
                       fb == null ? Colors.transparent : verdictColor(fb.verdict),
                   crosshair: _crosshair,
                   crosshairPlayer: g.pos.nextPlayer,
+                  nextMoves: [
+                    for (final n in g.nextMoves)
+                      (
+                        x: n.x,
+                        y: n.y,
+                        // Grey when unjudged: the opponent's replies, and your own
+                        // moves from before feedback was switched on.
+                        color: n.verdict == null
+                            ? const Color(0xFF546E7A)
+                            : verdictColor(n.verdict!),
+                        main: n.isMainLine,
+                      ),
+                  ],
                 ),
                 size: Size.infinite,
               ),

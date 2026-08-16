@@ -59,6 +59,10 @@ class BoardPainter extends CustomPainter {
   /// Colour of the preview stone: whose turn it is.
   final int crosshairPlayer;
 
+  /// Continuations already in the tree, as small dots. Without these a branch is
+  /// invisible: the board looks identical whether or not anything follows.
+  final List<({int x, int y, Color color, bool main})> nextMoves;
+
   BoardPainter({
     required this.board,
     this.heatmap,
@@ -68,6 +72,7 @@ class BoardPainter extends CustomPainter {
     this.markColor = const Color(0xFFE53935),
     this.crosshair,
     this.crosshairPlayer = Board.black,
+    this.nextMoves = const [],
   });
 
   @override
@@ -169,6 +174,20 @@ class BoardPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = cell * 0.09
           ..color = markColor,
+      );
+    }
+
+    for (final n in nextMoves) {
+      final at = g.point(n.x, n.y);
+      final r = cell * (n.main ? 0.20 : 0.15);
+      canvas.drawCircle(at, r, Paint()..color = n.color.withValues(alpha: 0.9));
+      canvas.drawCircle(
+        at,
+        r,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = math.max(1, cell * 0.03)
+          ..color = Colors.white70,
       );
     }
 
