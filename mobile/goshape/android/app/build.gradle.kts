@@ -35,10 +35,24 @@ android {
         versionName = flutter.versionName
     }
 
+    // Committed on purpose. Gradle generates ~/.android/debug.keystore per machine,
+    // so every CI runner signed with a different key and each new APK refused to
+    // install over the last one ("App not installed"). A fixed key makes updates
+    // work. It is worth nothing as a secret -- anyone with this repo can sign an
+    // APK that updates over a sideloaded build -- so it must be replaced with a
+    // real key kept out of the repo before this is published anywhere.
+    signingConfigs {
+        create("sideload") {
+            storeFile = file("sideload.p12")
+            storePassword = "sideload"
+            keyAlias = "sideload"
+            keyPassword = "sideload"
+        }
+    }
+
     buildTypes {
         release {
-            // Debug-signed so the APK can be sideloaded without a keystore.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("sideload")
             // MNN resolves classes from JNI by name; see proguard-rules.pro.
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

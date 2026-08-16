@@ -339,10 +339,14 @@ class _HomePageState extends State<HomePage> {
           )),
           const SizedBox(height: 6),
           _labelled('Show policy', SegmentedButton<HeatmapMode>(
-            segments: const [
-              ButtonSegment(value: HeatmapMode.off, label: Text('Off')),
-              ButtonSegment(value: HeatmapMode.yourRank, label: Text('Your rank')),
-              ButtonSegment(value: HeatmapMode.target, label: Text('Target')),
+            showSelectedIcon: false,
+            segments: [
+              const ButtonSegment(value: HeatmapMode.off, label: Text('Off')),
+              ButtonSegment(
+                  value: HeatmapMode.yourRank, label: Text(rankLabel(g.playerRank))),
+              ButtonSegment(
+                  value: HeatmapMode.target, label: Text(rankLabel(g.targetRank))),
+              const ButtonSegment(value: HeatmapMode.pro, label: Text('9p')),
             ],
             selected: {g.heatmapMode},
             onSelectionChanged:

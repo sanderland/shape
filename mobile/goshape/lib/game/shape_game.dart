@@ -90,7 +90,13 @@ enum MoveVerdict {
 enum FeedbackMode { off, mistakesOnly, all }
 
 /// Which policy, if any, to paint on the board before you move.
-enum HeatmapMode { off, yourRank, target }
+///
+/// [pro] is the strongest profile the net has, and is the same one the score and
+/// points-lost come from, so it is usually already evaluated and costs nothing to
+/// show. It is not an AI policy -- this net only ever learned to imitate humans,
+/// and giving it blank metadata produces an out-of-distribution answer, not a
+/// stronger one -- but it is the closest thing available without a second model.
+enum HeatmapMode { off, yourRank, target, pro }
 
 /// P(target rank | move) under a two-hypothesis prior, with both probabilities
 /// floored so vanishing policy values cannot manufacture a confident read.
@@ -198,6 +204,7 @@ class ShapeGame extends ChangeNotifier {
         HeatmapMode.off => null,
         HeatmapMode.yourRank => playerRank,
         HeatmapMode.target => targetRank,
+        HeatmapMode.pro => kReferenceProfile,
       };
 
   bool get wantsFeedback => feedbackMode != FeedbackMode.off;

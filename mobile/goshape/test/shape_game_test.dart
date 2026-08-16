@@ -354,6 +354,21 @@ void main() {
     expect(g.feedback, isNull);
   });
 
+  test('the 9p heatmap reuses the profile the score already comes from', () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake, autoplay: true);
+    g.feedbackMode = FeedbackMode.all;
+    await g.start();
+    await g.playAt(2, 2);
+
+    final before = fake.calls;
+    await g.setHeatmapMode(HeatmapMode.pro);
+    expect(g.heatmapProfile, kReferenceProfile);
+    expect(g.analysisFor(kReferenceProfile), isNotNull);
+    expect(fake.calls, before,
+        reason: 'the reference profile is already evaluated for the score');
+  });
+
   test('review is unavailable before you have moved', () async {
     final fake = FakeAnalyzer();
     final g = newGame(fake, autoplay: true);
