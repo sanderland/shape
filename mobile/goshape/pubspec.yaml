@@ -1,0 +1,44 @@
+name: goshape
+description: "SHAPE for Android: play Go against a human-like opponent and see how each move reads at your rank."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_launcher_icons: ^0.14.1
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  # Listed one by one rather than as a directory: featurizer_fixtures.json lives
+  # alongside these but is read from disk by the tests, and bundling it would put
+  # 200KB of test data in the APK.
+  assets:
+    - assets/humanv0.mnn
+    - assets/position.bin
+    - assets/reference.json
+
+# Generated from icon/ by `dart run flutter_launcher_icons`. The artwork is the
+# app's own visual language: a board, a local shape, and the green square it paints
+# on a suggested move. Everything that carries meaning sits on the three inner
+# intersections, which are the only ones inside the adaptive-icon safe zone.
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: icon/icon.png
+  adaptive_icon_background: "#D8BA92"
+  adaptive_icon_foreground: icon/foreground.png
+  # The artwork already keeps its content inside the safe zone and bleeds the grid
+  # deliberately, so the default 16% inset would only shrink it away from the edges.
+  adaptive_icon_foreground_inset: 0
+  remove_alpha_ios: true

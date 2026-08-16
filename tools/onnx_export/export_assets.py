@@ -1,4 +1,4 @@
-"""Emit the Flutter app's assets for the single-position slice.
+"""Emit the Flutter app's assets.
 
 - position.bin : float32 bin_input[22*19*19] then float32 global_input[19]
 - reference.json: desktop ONNX policy top-20 per profile, so the app can prove its

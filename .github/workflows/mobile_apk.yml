@@ -1,6 +1,6 @@
 name: Mobile APK
 
-# Builds the Android slice app and attaches the APK to the run, so it can be
+# Builds the Android app and attaches the APK to the run, so it can be
 # installed on a phone without anyone hand-uploading a binary.
 #
 # The 107 MB ONNX model is not in the repo. It is exported here from KataGo's
@@ -110,14 +110,14 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: model
-          path: mobile/shape_slice/assets
+          path: mobile/goshape/assets
 
       # MNN publishes prebuilt Android .so files but no Maven artifact, and the
       # repo's .gitignore excludes *.so, so fetch them rather than committing
       # binaries. MNN is what the net runs on; only the CPU backend is shipped,
       # since OpenCL matched it and Vulkan crashed.
       - name: Fetch MNN Android runtime
-        working-directory: mobile/shape_slice
+        working-directory: mobile/goshape
         run: |
           pkg="mnn_${MNN_VERSION}_android_armv7_armv8_cpu_opencl_vulkan"
           curl -sL --retry 3 -o mnn.zip \
@@ -141,26 +141,26 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        working-directory: mobile/shape_slice
+        working-directory: mobile/goshape
         run: flutter pub get
 
       - name: Analyze
-        working-directory: mobile/shape_slice
+        working-directory: mobile/goshape
         run: flutter analyze
 
       # Checks the Dart metadata encoding against the exported KataGo reference.
       - name: Test
-        working-directory: mobile/shape_slice
+        working-directory: mobile/goshape
         run: flutter test
 
       # The ONNX is only the source the .mnn was converted from; shipping it would
       # add 107MB to the APK for nothing.
       - name: Drop the ONNX model
-        working-directory: mobile/shape_slice
+        working-directory: mobile/goshape
         run: rm -f assets/*.onnx
 
       - name: Check the assets the app needs are present
-        working-directory: mobile/shape_slice
+        working-directory: mobile/goshape
         run: |
           ls -la assets
           missing=0
@@ -175,11 +175,11 @@ jobs:
           }
 
       - name: Build release APK (arm64)
-        working-directory: mobile/shape_slice
+        working-directory: mobile/goshape
         run: flutter build apk --release --split-per-abi --target-platform=android-arm64
 
       - name: Confirm the assets made it into the APK
-        working-directory: mobile/shape_slice
+        working-directory: mobile/goshape
         run: |
           apk=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           unzip -l "$apk" | grep -q "flutter_assets/assets/humanv0.mnn" \
@@ -191,8 +191,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         id: upload
         with:
-          name: shape-slice-arm64-apk
-          path: mobile/shape_slice/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          name: goshape-arm64-apk
+          path: mobile/goshape/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           retention-days: 30
 
       - name: Link the APK on the PR
@@ -202,10 +202,10 @@ jobs:
           ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
         with:
           script: |
-            const marker = '<!-- shape-slice-apk -->';
+            const marker = '<!-- goshape-apk -->';
             const body = [
               marker,
-              '### 📱 SHAPE mobile slice — APK',
+              '### 📱 SHAPE for Android — APK',
               '',
               `**[Download the APK](${process.env.ARTIFACT_URL})** (arm64-v8a, debug-signed)`,
               '',
