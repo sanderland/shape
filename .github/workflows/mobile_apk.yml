@@ -113,9 +113,9 @@ jobs:
           path: mobile/shape_slice/assets
 
       # MNN publishes prebuilt Android .so files but no Maven artifact, and the
-      # repo's .gitignore excludes *.so, so fetch them rather than committing 8MB
-      # of binaries. The app uses MNN only in the benchmark, to compare its GPU
-      # backends against ONNX Runtime, which has none on Android.
+      # repo's .gitignore excludes *.so, so fetch them rather than committing
+      # binaries. MNN is what the net runs on; only the CPU backend is shipped,
+      # since OpenCL matched it and Vulkan crashed.
       - name: Fetch MNN Android runtime
         working-directory: mobile/shape_slice
         run: |
@@ -124,8 +124,7 @@ jobs:
             "https://github.com/alibaba/MNN/releases/download/${MNN_VERSION}/${pkg}.zip"
           unzip -q mnn.zip
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          for l in libMNN.so libMNN_CL.so libMNN_Vulkan.so libMNN_Express.so \
-                   libmnncore.so libc++_shared.so; do
+          for l in libMNN.so libMNN_Express.so libmnncore.so libc++_shared.so; do
             cp "${pkg}/arm64-v8a/$l" android/app/src/main/jniLibs/arm64-v8a/
           done
           rm -rf mnn.zip "$pkg"
@@ -154,12 +153,18 @@ jobs:
         working-directory: mobile/shape_slice
         run: flutter test
 
+      # The ONNX is only the source the .mnn was converted from; shipping it would
+      # add 107MB to the APK for nothing.
+      - name: Drop the ONNX model
+        working-directory: mobile/shape_slice
+        run: rm -f assets/*.onnx
+
       - name: Check the assets the app needs are present
         working-directory: mobile/shape_slice
         run: |
           ls -la assets
           missing=0
-          for f in b18c384nbt-humanv0.onnx humanv0.mnn position.bin reference.json \
+          for f in humanv0.mnn position.bin reference.json \
                    featurizer_fixtures.json; do
             if [ ! -s "assets/$f" ]; then echo "MISSING: assets/$f"; missing=1; fi
           done
@@ -177,12 +182,11 @@ jobs:
         working-directory: mobile/shape_slice
         run: |
           apk=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-          for f in b18c384nbt-humanv0.onnx humanv0.mnn; do
-            unzip -l "$apk" | grep -q "flutter_assets/assets/$f" \
-              || { echo "MISSING FROM APK: $f"; exit 1; }
-          done
-          unzip -l "$apk" | grep -E "flutter_assets/assets/(.*onnx|.*mnn)"
-          unzip -l "$apk" | grep -c "lib/arm64-v8a/libMNN" 
+          unzip -l "$apk" | grep -q "flutter_assets/assets/humanv0.mnn" \
+            || { echo "MISSING FROM APK: humanv0.mnn"; exit 1; }
+          unzip -l "$apk" | grep -q "lib/arm64-v8a/libMNN.so" \
+            || { echo "MISSING FROM APK: libMNN.so"; exit 1; }
+          ls -la "$apk"
 
       - uses: actions/upload-artifact@v4
         id: upload

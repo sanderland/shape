@@ -16,8 +16,7 @@ class BoardGeometry {
   final int size;
 
   /// [origin] is the top-left intersection, placed so the margins around the grid
-  /// are equal. Previously the grid was drawn half a cell left of centre, which
-  /// left a margin three times wider on the right than on the left.
+  /// are equal.
   BoardGeometry(Size canvas, this.size)
       : cell = math.min(canvas.width, canvas.height) / (size + 1),
         origin = Offset(
@@ -27,15 +26,15 @@ class BoardGeometry {
 
   Offset point(int x, int y) => Offset(origin.dx + x * cell, origin.dy + y * cell);
 
-  /// Nearest intersection to a tap, or null if clearly off-board.
-  (int, int)? hit(Offset local) {
-    final x = ((local.dx - origin.dx) / cell).round();
-    final y = ((local.dy - origin.dy) / cell).round();
-    if (x < 0 || y < 0 || x >= size || y >= size) return null;
-    final d = (local - point(x, y)).distance;
-    if (d > cell * 0.75) return null;
-    return (x, y);
-  }
+  /// Nearest intersection, clamped to the board.
+  ///
+  /// Clamped rather than nullable because this drives a finger being dragged: the
+  /// crosshair should stay on the nearest line when the finger strays into the
+  /// margin, not blink out.
+  (int, int) nearest(Offset local) => (
+        ((local.dx - origin.dx) / cell).round().clamp(0, size - 1),
+        ((local.dy - origin.dy) / cell).round().clamp(0, size - 1),
+      );
 }
 
 class BoardPainter extends CustomPainter {
@@ -43,8 +42,17 @@ class BoardPainter extends CustomPainter {
   final PolicyData? heatmap;
   final int topN;
   final (int, int)? lastMove;
+
   /// Move to ring in red (the one the feedback refers to), if any.
   final (int, int)? flaggedMove;
+
+  /// Intersection under the finger, drawn as full-width guide lines and a preview
+  /// stone. A stone is a good deal smaller than a fingertip, so aiming happens
+  /// while held and the move is placed on release.
+  final (int, int)? crosshair;
+
+  /// Colour of the preview stone: whose turn it is.
+  final int crosshairPlayer;
 
   BoardPainter({
     required this.board,
@@ -52,6 +60,8 @@ class BoardPainter extends CustomPainter {
     this.topN = 12,
     this.lastMove,
     this.flaggedMove,
+    this.crosshair,
+    this.crosshairPlayer = Board.black,
   });
 
   @override
@@ -153,6 +163,37 @@ class BoardPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = cell * 0.09
           ..color = const Color(0xFFE53935),
+      );
+    }
+
+    final ch = crosshair;
+    if (ch != null) {
+      const guide = Color(0xFF8E24AA);
+      final at = g.point(ch.$1, ch.$2);
+      final guides = Paint()
+        ..color = guide.withValues(alpha: 0.85)
+        ..strokeWidth = math.max(1.5, cell * 0.07);
+      canvas.drawLine(
+          Offset(g.point(0, 0).dx, at.dy), Offset(g.point(n - 1, 0).dx, at.dy), guides);
+      canvas.drawLine(
+          Offset(at.dx, g.point(0, 0).dy), Offset(at.dx, g.point(0, n - 1).dy), guides);
+
+      canvas.drawCircle(
+        at,
+        cell * 0.46,
+        Paint()
+          ..color = (crosshairPlayer == Board.black
+                  ? const Color(0xFF1A1A1A)
+                  : const Color(0xFFF7F7F7))
+              .withValues(alpha: 0.75),
+      );
+      canvas.drawCircle(
+        at,
+        cell * 0.46,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = math.max(1.5, cell * 0.08)
+          ..color = guide,
       );
     }
   }

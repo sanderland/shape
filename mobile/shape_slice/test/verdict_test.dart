@@ -73,7 +73,7 @@ void main() {
   });
 
   test('a move both ranks like equally is NOT praised', () {
-    // The bug this pins: the praise boundary used to sit at 0.5, which is the
+    // Pins the praise boundary away from 0.5, which is the
     // point of no evidence, so ~39% of the moves a 5k genuinely plays were
     // labelled "above your level".
     final even = fb(playerProb: 0.10, targetProb: 0.105, pointsLost: 0.1);

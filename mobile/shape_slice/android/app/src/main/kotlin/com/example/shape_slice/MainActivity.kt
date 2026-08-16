@@ -1,9 +1,5 @@
 package com.example.shape_slice
 
-import android.app.ActivityManager
-import android.app.ApplicationExitInfo
-import android.content.Context
-import android.os.Build
 import com.taobao.android.mnn.MNNNetNative
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -11,15 +7,11 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
 /**
- * Minimal bridge to MNN, so the app can compare ONNX Runtime against MNN's CPU,
- * OpenCL and Vulkan backends on real hardware.
+ * Bridge to MNN, which runs the human-SL net.
  *
- * ONNX Runtime has no Android GPU backend, so measuring whether this phone's GPU
- * beats its CPU means running a second runtime. MNN ships prebuilt .so files with
- * a complete JNI, so this is a thin channel rather than an NDK build.
- *
- * Only what the benchmark needs: load a model on a chosen backend, run one
- * three-input/three-output evaluation, release.
+ * MNN ships prebuilt Android .so files with a complete JNI, so this is a thin
+ * method channel rather than an NDK build. Only what the engine needs: load the
+ * model, run one three-input/three-output evaluation, release.
  */
 class MainActivity : FlutterActivity() {
     private var netPtr = 0L
@@ -29,6 +21,12 @@ class MainActivity : FlutterActivity() {
 
     private companion object {
         const val CHANNEL = "shape/mnn"
+
+        /** MNNForwardType MNN_FORWARD_CPU. The GPU backends were measured and are
+         *  not worth having: OpenCL matched the CPU to within a millisecond and
+         *  Vulkan crashed during inference. */
+        const val FORWARD_CPU = 0
+        const val NUM_THREADS = 4
         val INPUT_NAMES = arrayOf("bin_input", "global_input", "input_meta")
         val OUTPUT_NAMES = arrayOf("policy", "value", "lead")
     }
@@ -40,14 +38,7 @@ class MainActivity : FlutterActivity() {
                 try {
                     when (call.method) {
                         "cacheDir" -> result.success(cacheDir.absolutePath)
-                        "lastExit" -> result.success(lastExit())
-                        "load" -> result.success(
-                            load(
-                                call.argument<String>("path")!!,
-                                call.argument<Int>("forwardType")!!,
-                                call.argument<Int>("numThread") ?: 4,
-                            )
-                        )
+                        "load" -> result.success(load(call.argument<String>("path")!!))
                         "run" -> result.success(
                             run(
                                 call.argument<FloatArray>("bin")!!,
@@ -69,41 +60,6 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Why the process died last time, straight from Android.
-     *
-     * A native crash kills the process before any in-app logging can be trusted,
-     * so ask the platform instead: getHistoricalProcessExitReasons survives the
-     * death and carries the signal and, for native crashes, the tombstone.
-     */
-    private fun lastExit(): Map<String, Any?>? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
-        val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val info = am.getHistoricalProcessExitReasons(packageName, 0, 5)
-            .firstOrNull { it.reason != ApplicationExitInfo.REASON_USER_REQUESTED }
-            ?: return null
-
-        val reason = when (info.reason) {
-            ApplicationExitInfo.REASON_CRASH_NATIVE -> "native crash"
-            ApplicationExitInfo.REASON_CRASH -> "java crash"
-            ApplicationExitInfo.REASON_SIGNALED -> "signalled"
-            ApplicationExitInfo.REASON_LOW_MEMORY -> "low memory"
-            ApplicationExitInfo.REASON_ANR -> "ANR"
-            ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "resource limit"
-            else -> "reason ${info.reason}"
-        }
-
-        // No tombstone here: traceInputStream returns a protobuf for native crashes,
-        // and rendering it as text produced only mojibake. The journal's last step is
-        // the useful signal; logcat has the trace for anyone with the device attached.
-        return mapOf(
-            "reason" to reason,
-            "description" to info.description,
-            "rssKb" to info.rss,
-            "importance" to info.importance,
-        )
-    }
-
-    /**
      * [path] is a real file, extracted by the Dart side via rootBundle.
      *
      * Extraction deliberately does NOT go through AssetManager here: opening
@@ -112,7 +68,7 @@ class MainActivity : FlutterActivity() {
      * ONNX without trouble, so the Dart side writes the model out and hands over
      * a path.
      */
-    private fun load(path: String, forwardType: Int, numThread: Int): Map<String, Any> {
+    private fun load(path: String): Map<String, Any> {
         releaseMnn()
         MNNNetNative.ensureLoaded()
         check(File(path).exists()) { "model not found at $path" }
@@ -121,11 +77,9 @@ class MainActivity : FlutterActivity() {
         check(netPtr != 0L) { "MNN could not load $path" }
 
         sessionPtr = MNNNetNative.nativeCreateSession(
-            netPtr, forwardType, numThread, emptyArray(), OUTPUT_NAMES
+            netPtr, FORWARD_CPU, NUM_THREADS, emptyArray(), OUTPUT_NAMES
         )
-        // A GPU backend that is unavailable returns a null session rather than
-        // throwing, so treat that as the failure it is instead of crashing later.
-        check(sessionPtr != 0L) { "MNN backend $forwardType unavailable" }
+        check(sessionPtr != 0L) { "MNN could not create a session" }
 
         for (name in INPUT_NAMES) {
             val t = MNNNetNative.nativeGetSessionInput(netPtr, sessionPtr, name)

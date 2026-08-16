@@ -14,19 +14,9 @@ package com.taobao.android.mnn;
  * project/android/demo/app/src/main/java/com/taobao/android/mnn/MNNNetNative.java
  */
 public class MNNNetNative {
-    private static void loadGpuLibrary(String name) {
-        try {
-            System.loadLibrary(name);
-        } catch (Throwable ignored) {
-            // A GPU backend missing on this device is expected; the caller falls back.
-        }
-    }
-
     static {
         System.loadLibrary("MNN");
-        loadGpuLibrary("MNN_Vulkan");
-        loadGpuLibrary("MNN_CL");
-        loadGpuLibrary("MNN_Express");
+        System.loadLibrary("MNN_Express");
         System.loadLibrary("mnncore");
     }
 

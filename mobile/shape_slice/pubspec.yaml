@@ -9,7 +9,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_onnxruntime: ^1.8.3
 
 dev_dependencies:
   flutter_test:
@@ -20,5 +19,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # Listed one by one rather than as a directory: featurizer_fixtures.json lives
+  # alongside these but is read from disk by the tests, and bundling it would put
+  # 200KB of test data in the APK.
   assets:
-    - assets/
+    - assets/humanv0.mnn
+    - assets/position.bin
+    - assets/reference.json

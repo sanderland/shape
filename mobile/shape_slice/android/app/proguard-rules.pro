@@ -1,9 +1,6 @@
-# ONNX Runtime's native code looks these classes up by name via JNI (GetMethodID /
-# FindClass), so R8 cannot see the references and strips them. Without this, a release
-# build dies at the first session.run() with:
-#   ClassNotFoundException: ai.onnxruntime.TensorInfo
-#   JNI DETECTED ERROR IN APPLICATION: java_class == null in call to GetMethodID
-# The flutter_onnxruntime plugin ships no consumer rules, so keep them here.
--keep class ai.onnxruntime.** { *; }
--keepclassmembers class ai.onnxruntime.** { *; }
--dontwarn ai.onnxruntime.**
+# MNN's native code resolves this class and its methods by name through JNI
+# (Java_com_taobao_android_mnn_MNNNetNative_*), so R8 cannot see the references and
+# would strip or rename them. A release build would then die at the first native
+# call with UnsatisfiedLinkError.
+-keep class com.taobao.android.mnn.** { *; }
+-keepclassmembers class com.taobao.android.mnn.** { *; }

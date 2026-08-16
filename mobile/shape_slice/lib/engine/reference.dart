@@ -1,9 +1,9 @@
-// The fixed position the app checks every runtime against.
+// The fixed position the app checks itself against at startup.
 //
 // Shipped in assets/position.bin with the expected outputs in assets/reference.json,
-// both produced by the desktop export. Two callers need it: the benchmark, which
-// times each runtime, and engine startup, which uses it to decide whether a runtime
-// may be trusted with gameplay at all.
+// both produced by the desktop export. Engine startup runs it once to confirm this
+// device computes the net correctly, because a net that is quietly wrong produces
+// feedback that looks entirely plausible and is not.
 
 import 'dart:convert';
 import 'dart:typed_data';
@@ -12,12 +12,12 @@ import 'package:flutter/services.dart';
 
 import 'features.dart';
 
-/// Tolerance for "same answer as desktop". fp32 rounding across runtimes lands
-/// around 1e-5; anything near 1e-3 means a backend is quietly doing its own
-/// thing, and a wrong top move means it is broken outright.
+/// Tolerance for "same answer as desktop". fp32 rounding lands around 1e-5;
+/// anything near 1e-3 means the runtime is doing its own thing, and a wrong top
+/// move means it is broken outright.
 const double kReferenceTolerance = 1e-3;
 
-/// How far a runtime's output strayed from the desktop reference.
+/// How far this device's output strayed from the desktop reference.
 class ReferenceCheck {
   /// Largest disagreement over the moves desktop rated highest.
   final double maxDiff;

@@ -269,20 +269,25 @@ class ShapeGame extends ChangeNotifier {
     return before.lead + after.lead - offset;
   }
 
-  /// Describe the move that produced the current position, if it was the human's.
+  /// Describe the last move you played at or before the cursor.
+  ///
+  /// Deliberately not "the move that produced this position": the opponent replies
+  /// immediately, so by the time it is your turn again that move is theirs, and
+  /// keying off it would leave the card empty for the whole of your thinking time.
   Future<void> _updateFeedback() async {
     feedback = null;
-    if (!wantsFeedback || cursor == 0) return;
-    final move = line[cursor - 1];
-    if (move.pla != humanColor || move.isPass) return;
+    if (!wantsFeedback) return;
+    final beforeIdx = lastOwnMoveIndex;
+    if (beforeIdx == null) return;
+    final move = line[beforeIdx];
 
-    final beforeIdx = cursor - 1;
-    // Normally both are already cached from when they were played; this only does
-    // work if hints were off then, or the ranks changed since. The position after
-    // the move only contributes its reference lead (for points-lost) -- the
-    // player/target probabilities all come from the position before the move.
+    // Usually both are cached from when the move was played; this only does work if
+    // feedback was off then, or the ranks have changed since. The position after the
+    // move contributes only its reference lead, for points-lost -- every probability
+    // comes from the position you faced before playing.
     await _analyze(beforeIdx, () => _positionAt(beforeIdx), _feedbackProfiles);
-    await _analyze(cursor, () => pos, const [kReferenceProfile]);
+    await _analyze(beforeIdx + 1, () => _positionAt(beforeIdx + 1),
+        const [kReferenceProfile]);
 
     final before = analyses[beforeIdx];
     final player = before?[playerRank];
@@ -326,6 +331,7 @@ class ShapeGame extends ChangeNotifier {
     notifyListeners();
 
     try {
+      _reviewReturn = null;
       // Playing while browsing history discards the moves and analysis after here.
       if (!atTip) {
         line.removeRange(cursor, line.length);
@@ -390,15 +396,19 @@ class ShapeGame extends ChangeNotifier {
 
   // ---- navigation ----
 
-  Future<void> _goTo(int target) async {
+  Future<void> _goTo(int target, {bool keepReview = false}) async {
     if (busy) return;
+    if (!keepReview) _reviewReturn = null;
     final t = target.clamp(0, line.length);
-    if (t == cursor) return;
     busy = true;
     notifyListeners();
     try {
-      cursor = t;
-      pos = _positionAt(cursor);
+      // Still re-analyzes when the cursor has not moved: entering or leaving review
+      // changes which policy the board needs even when it lands where it started.
+      if (t != cursor) {
+        cursor = t;
+        pos = _positionAt(cursor);
+      }
       await _analyzeCurrent();
       await _updateFeedback();
     } catch (e) {
@@ -417,18 +427,33 @@ class ShapeGame extends ChangeNotifier {
     return null;
   }
 
-  bool get canReviewOwnMove => lastOwnMoveIndex != null;
+  bool get canReviewOwnMove => lastOwnMoveIndex != null || reviewing;
 
-  /// Jump to the position you faced before your last move and paint the target
-  /// rank's policy there -- "what would a 2d have played?".
+  /// Where review was entered from, so leaving it puts everything back.
+  ({int cursor, HeatmapMode heatmap})? _reviewReturn;
+
+  bool get reviewing => _reviewReturn != null;
+
+  /// Show the position you faced before your last move with the target rank's
+  /// policy on it -- "what would a 2d have played?" -- and put both the cursor and
+  /// the heatmap setting back when tapped again.
   ///
   /// Skips back over the opponent's replies, so it lands on your decision rather
   /// than theirs no matter where the cursor is.
-  Future<void> reviewLastOwnMove() async {
+  Future<void> toggleReview() async {
+    if (busy) return;
+    final ret = _reviewReturn;
+    if (ret != null) {
+      _reviewReturn = null;
+      heatmapMode = ret.heatmap;
+      await _goTo(ret.cursor, keepReview: true);
+      return;
+    }
     final idx = lastOwnMoveIndex;
-    if (idx == null || busy) return;
+    if (idx == null) return;
+    _reviewReturn = (cursor: cursor, heatmap: heatmapMode);
     heatmapMode = HeatmapMode.target;
-    await _goTo(idx);
+    await _goTo(idx, keepReview: true);
   }
 
   Future<void> goFirst() => _goTo(0);
@@ -446,6 +471,7 @@ class ShapeGame extends ChangeNotifier {
       line.clear();
       cursor = 0;
       analyses.clear();
+      _reviewReturn = null;
       feedback = null;
       error = null;
       pos = GoPosition(size ?? boardSize, Rules.japanese);

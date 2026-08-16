@@ -9,10 +9,8 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
-    // AssetManager cannot stream a large *compressed* asset, which is how the
-    // 107MB .mnn failed with FileNotFoundException while the .onnx was fine (that
-    // one is read via Dart's rootBundle, not AssetManager). Same reason TFLite
-    // projects always set this.
+    // A 107MB asset has to be stored uncompressed for anything to read it as a
+    // file. Same reason TFLite projects always set this.
     androidResources {
         noCompress += listOf("mnn")
     }
@@ -41,7 +39,7 @@ android {
         release {
             // Debug-signed so the APK can be sideloaded without a keystore.
             signingConfig = signingConfigs.getByName("debug")
-            // ONNX Runtime resolves classes from JNI by name; see proguard-rules.pro.
+            // MNN resolves classes from JNI by name; see proguard-rules.pro.
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

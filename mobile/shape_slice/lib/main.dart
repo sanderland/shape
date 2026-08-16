@@ -3,14 +3,13 @@
 //
 // Everything runs on device: the featurizer is a port of KataGo's board.py +
 // features.py (pinned by test/featurizer_test.dart) feeding the human-SL net
-// through ONNX Runtime.
+// through MNN.
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'board_painter.dart';
 import 'engine/analysis.dart';
-import 'engine/benchmark.dart';
 import 'game/shape_game.dart';
 
 
@@ -41,9 +40,11 @@ class _HomePageState extends State<HomePage> {
   ShapeGame? game;
   Object? loadError;
   String status = 'loading model…';
-  bool benchmarking = false;
   final ScrollController _panelController = ScrollController();
   MoveFeedback? _lastFeedback;
+
+  /// Intersection currently under the finger, if any.
+  (int, int)? _crosshair;
 
   @override
   void initState() {
@@ -131,7 +132,7 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    final navEnabled = !g.busy && !benchmarking;
+    final navEnabled = !g.busy;
     return Scaffold(
       appBar: AppBar(
         title: const Text('SHAPE'),
@@ -148,10 +149,12 @@ class _HomePageState extends State<HomePage> {
             icon: const Icon(Icons.chevron_left),
           ),
           IconButton(
-            tooltip: 'What would ${rankLabel(g.targetRank)} have played?',
-            onPressed:
-                navEnabled && g.canReviewOwnMove ? g.reviewLastOwnMove : null,
-            icon: const Icon(Icons.lightbulb_outline),
+            tooltip: g.reviewing
+                ? 'Back to the game'
+                : 'What would ${rankLabel(g.targetRank)} have played?',
+            onPressed: navEnabled && g.canReviewOwnMove ? g.toggleReview : null,
+            icon: Icon(g.reviewing ? Icons.lightbulb : Icons.lightbulb_outline),
+            color: g.reviewing ? const Color(0xFFF9A825) : null,
           ),
           IconButton(
             tooltip: 'Forward',
@@ -182,6 +185,15 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  bool _canPlay(ShapeGame g) =>
+      !g.busy && g.humanToPlay && !g.gameOver;
+
+  void _aim(ShapeGame g, BoardGeometry geom, Offset local) {
+    if (!_canPlay(g)) return;
+    final p = geom.nearest(local);
+    if (p != _crosshair) setState(() => _crosshair = p);
+  }
+
   Widget _board(ShapeGame g) {
     final lastMove = g.cursor == 0 || g.line[g.cursor - 1].isPass
         ? null
@@ -200,19 +212,27 @@ class _HomePageState extends State<HomePage> {
               Size(constraints.maxWidth, constraints.maxHeight),
               g.boardSize,
             );
-            return GestureDetector(
+            // Raw pointer events rather than a tap or drag recogniser: both a quick
+            // tap and a long adjusting drag have to behave the same way, which is
+            // aim while held, place on release.
+            return Listener(
               behavior: HitTestBehavior.opaque,
-              onTapUp: (d) {
-                if (g.busy || benchmarking || !g.humanToPlay || g.gameOver) return;
-                final p = geom.hit(d.localPosition);
-                if (p != null) g.playAt(p.$1, p.$2);
+              onPointerDown: (e) => _aim(g, geom, e.localPosition),
+              onPointerMove: (e) => _aim(g, geom, e.localPosition),
+              onPointerUp: (_) {
+                final p = _crosshair;
+                setState(() => _crosshair = null);
+                if (p != null && _canPlay(g)) g.playAt(p.$1, p.$2);
               },
+              onPointerCancel: (_) => setState(() => _crosshair = null),
               child: CustomPaint(
                 painter: BoardPainter(
                   board: g.pos.board,
                   heatmap: _overlayPolicy,
                   lastMove: lastMove,
                   flaggedMove: (fb != null && fb.isMistake) ? (fb.x, fb.y) : null,
+                  crosshair: _crosshair,
+                  crosshairPlayer: g.pos.nextPlayer,
                 ),
                 size: Size.infinite,
               ),
@@ -224,7 +244,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _panel(ShapeGame g) {
-    final controlsEnabled = !g.busy && !benchmarking;
+    final controlsEnabled = !g.busy;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
       child: Column(
@@ -284,101 +304,10 @@ class _HomePageState extends State<HomePage> {
               Text('move ${g.cursor}/${g.line.length}   '
                   '${g.gameOver ? "game over" : (g.humanToPlay ? "your turn" : "opponent…")}   '
                   '${g.analysisMs} ms   ${g.engine.provider}'),
-              for (final note in (g.engine is ShapeEngine
-                  ? (g.engine as ShapeEngine).notes
-                  : const <String>[]))
-                Text(note, style: const TextStyle(color: Colors.orange, fontSize: 11)),
               if (g.error != null)
                 Text(g.error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
             ]),
           ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Wrap(spacing: 4, children: [
-              TextButton.icon(
-                onPressed: g.busy || benchmarking ? null : () => _benchmark(g),
-                icon: const Icon(Icons.speed, size: 18),
-                label: Text(benchmarking ? 'Benchmarking…' : 'Benchmark ONNX Runtime'),
-              ),
-              TextButton.icon(
-                onPressed: g.busy || benchmarking
-                    ? null
-                    : () => _benchmark(g, includeMnn: true),
-                icon: const Icon(Icons.memory, size: 18),
-                label: const Text('+ MNN'),
-              ),
-            ]),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _benchmark(ShapeGame g, {bool includeMnn = false}) async {
-    if (benchmarking || g.busy) return;
-    setState(() => benchmarking = true);
-    List<BenchRow> results;
-    try {
-      results = await runBenchmark(includeMnn: includeMnn);
-    } catch (e) {
-      results = [BenchRow('benchmark failed', error: '$e')];
-    }
-    if (!mounted) return;
-    setState(() => benchmarking = false);
-    showDialog<void>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Per-eval time'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final r in results)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: Row(children: [
-                    SizedBox(
-                      width: 116,
-                      child: Text(r.label,
-                          style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
-                    ),
-                    SizedBox(
-                      width: 54,
-                      child: Text(r.ok ? '${r.msPerEval} ms' : '--',
-                          textAlign: TextAlign.right,
-                          style: const TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700)),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        r.error ?? r.status,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: r.error != null
-                              ? Colors.black45
-                              : (r.correct ? const Color(0xFF0B6E2E) : Colors.red),
-                        ),
-                      ),
-                    ),
-                  ]),
-                ),
-              const SizedBox(height: 10),
-              const Text(
-                'Every row runs the same fixed position and is checked against the '
-                'desktop reference, so a backend that is fast but wrong shows up as '
-                'wrong rather than as a win. "unavailable" means the device or '
-                'driver does not offer that backend.',
-                style: TextStyle(fontSize: 11, color: Colors.black54),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
         ],
       ),
     );
@@ -391,8 +320,8 @@ class _HomePageState extends State<HomePage> {
         FeedbackMode.mistakesOnly => g.feedback?.isMistake ?? false,
       };
 
-  /// Stretches [child] to full width: without this a SegmentedButton sizes to
-  /// its labels, so the two rows came out different widths.
+  /// Stretches [child] to full width: a SegmentedButton otherwise sizes to its
+  /// labels, leaving the two rows different widths.
   Widget _labelled(String label, Widget child) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -457,10 +386,19 @@ class _HomePageState extends State<HomePage> {
   Widget _feedbackCard(ShapeGame g) {
     final fb = g.feedback;
     if (fb == null) {
-      return const Card(
+      return Card(
         child: Padding(
-          padding: EdgeInsets.all(12),
-          child: Text('Play a move to see how it looks to each rank.'),
+          padding: const EdgeInsets.all(12),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Welcome to SHAPE',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text(
+              'Your moves are judged against how likely they are at '
+              '${rankLabel(g.playerRank)} and at ${rankLabel(g.targetRank)}.',
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+          ]),
         ),
       );
     }

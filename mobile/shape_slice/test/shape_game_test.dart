@@ -1,8 +1,8 @@
-// Drives the whole game loop against a fake analyzer: no model, no ONNX, no device.
+// Drives the whole game loop against a fake analyzer: no model, no device.
 //
-// Covers the two things that went wrong in review -- stale analyses surviving a
-// branch, and an opponent that could never pass -- plus the caching claim that
-// browsing history does no work.
+// Covers branching (analyses must not survive a discarded line), the opponent's
+// ability to pass, feedback and review, and the claim that browsing history is a
+// pure cache hit.
 
 import 'dart:async';
 import 'dart:math';
@@ -213,12 +213,74 @@ void main() {
     expect(g.cursor, 2);
 
     await g.setHeatmapMode(HeatmapMode.off);
-    await g.reviewLastOwnMove();
+    await g.toggleReview();
 
     expect(g.cursor, 0, reason: 'should land on the position you faced');
     expect(g.heatmapMode, HeatmapMode.target,
         reason: 'the point of the button is to show the target policy');
     expect(g.analysisFor(g.targetRank), isNotNull);
+  });
+
+  test('review toggles back to where it was, heatmap included', () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake, autoplay: true);
+    await g.start();
+    await g.playAt(2, 2);
+    await g.setHeatmapMode(HeatmapMode.yourRank);
+    final cursorBefore = g.cursor;
+
+    await g.toggleReview();
+    expect(g.reviewing, isTrue);
+    expect(g.cursor, 0);
+    expect(g.heatmapMode, HeatmapMode.target);
+
+    await g.toggleReview();
+    expect(g.reviewing, isFalse);
+    expect(g.cursor, cursorBefore, reason: 'should return to the live position');
+    expect(g.heatmapMode, HeatmapMode.yourRank,
+        reason: 'the heatmap setting was borrowed, not replaced');
+  });
+
+  test('ordinary navigation leaves review rather than stranding it', () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake, autoplay: true);
+    await g.start();
+    await g.playAt(2, 2);
+    await g.toggleReview();
+    expect(g.reviewing, isTrue);
+
+    await g.goLast();
+    expect(g.reviewing, isFalse);
+  });
+
+  test('feedback describes your move while the opponent is to blame for the position',
+      () async {
+    // The opponent replies at once, so keying feedback off "the move that produced
+    // this position" left the card empty for the whole of the player's turn.
+    final fake = FakeAnalyzer();
+    final g = newGame(fake, autoplay: true);
+    g.feedbackMode = FeedbackMode.all;
+    await g.start();
+    await g.playAt(2, 2);
+
+    expect(g.line.length, 2, reason: 'opponent has replied');
+    expect(g.cursor, 2);
+    expect(g.feedback, isNotNull, reason: 'still describing your move, not theirs');
+    expect((g.feedback!.x, g.feedback!.y), (2, 2));
+  });
+
+  test('turning feedback on describes the move already played', () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake, autoplay: true);
+    g.feedbackMode = FeedbackMode.off;
+    await g.start();
+    await g.playAt(2, 2);
+    expect(g.feedback, isNull);
+
+    await g.setFeedbackMode(FeedbackMode.all);
+    expect(g.feedback, isNotNull,
+        reason: 'no further move should be needed to get feedback');
+    expect((g.feedback!.x, g.feedback!.y), (2, 2));
   });
 
   test('review is unavailable before you have moved', () async {
