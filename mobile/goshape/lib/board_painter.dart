@@ -198,7 +198,9 @@ class BoardPainter extends CustomPainter {
       final at = g.point(ch.$1, ch.$2);
       final guides = Paint()
         ..color = guide.withValues(alpha: 0.85)
-        ..strokeWidth = math.max(1.5, cell * 0.07);
+        // Thick enough to read at arm's length with a finger on the board; at half
+        // this they were hard to pick out against the grid.
+        ..strokeWidth = math.max(3, cell * 0.14);
       canvas.drawLine(
           Offset(g.point(0, 0).dx, at.dy), Offset(g.point(n - 1, 0).dx, at.dy), guides);
       canvas.drawLine(

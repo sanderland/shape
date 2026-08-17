@@ -25,12 +25,16 @@ class FeedbackCard extends StatelessWidget {
   final String targetRank;
   final int boardSize;
 
+  /// How far behind you are, when that is far enough to be worth saying.
+  final double? pointsBehind;
+
   const FeedbackCard({
     super.key,
     required this.feedback,
     required this.playerRank,
     required this.targetRank,
     required this.boardSize,
+    this.pointsBehind,
   });
 
   @override
@@ -106,6 +110,20 @@ class FeedbackCard extends StatelessWidget {
               padding: EdgeInsets.only(top: 4),
               child: Text('Under 1% at both ranks.',
                   style: TextStyle(fontSize: 12, color: Colors.black54)),
+            ),
+          // Said once the result is not really in doubt, because that is the point
+          // at which the shapes stop being the thing you are practising.
+          if (pointsBehind != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '${pointsBehind!.toStringAsFixed(0)} points behind. '
+                'Shape matters less once a game is decided.',
+                style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFFE65100),
+                    fontStyle: FontStyle.italic),
+              ),
             ),
         ]),
       ),

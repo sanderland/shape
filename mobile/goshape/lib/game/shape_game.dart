@@ -19,8 +19,21 @@ import '../engine/features.dart';
 const List<String> kRanks = [
   'rank_20k', 'rank_15k', 'rank_10k', 'rank_8k', 'rank_6k', 'rank_5k', 'rank_4k',
   'rank_3k', 'rank_2k', 'rank_1k', 'rank_1d', 'rank_2d', 'rank_3d', 'rank_4d',
-  'rank_5d', 'rank_6d', 'rank_7d', 'rank_8d', 'rank_9d', 'proyear_2023',
+  'rank_5d', 'rank_6d', 'rank_7d', 'rank_8d', 'rank_9d',
+  // Pro records by era. The net was trained on games from the year, so these play
+  // the openings and shapes of their time, not a weaker version of modern play --
+  // 1850 is a different game, not a worse one. 2015 is the last pre-AlphaGo year.
+  'proyear_1850', 'proyear_1910', 'proyear_1930', 'proyear_1950',
+  'proyear_1980', 'proyear_2015', 'proyear_2023',
 ];
+
+/// Default for [ShapeGame.mistakePoints]: desktop SHAPE's should_halt_on_mistake.
+const double kDefaultMistakePoints = kMistakeSizePoints;
+
+/// Default for [ShapeGame.behindPoints]. Far enough that the result is not in
+/// doubt at any amateur level, so the remaining shapes are being played out in a
+/// game already decided.
+const double kDefaultBehindPoints = 15.0;
 
 /// Strongest profile the net offers; used for the score estimate rather than the
 /// player's own rank, so "points lost" doesn't move when you change your rank.
@@ -119,6 +132,9 @@ class MoveFeedback {
   /// Points lost per the reference profile's lead head. Null until both ends analyzed.
   final double? pointsLost;
 
+  /// The bar a loss has to clear to count, so it can be tuned per game.
+  final double mistakePoints;
+
   MoveFeedback({
     required this.x,
     required this.y,
@@ -128,11 +144,12 @@ class MoveFeedback {
     required this.targetRel,
     required this.moveLikeTarget,
     required this.pointsLost,
+    this.mistakePoints = kDefaultMistakePoints,
   });
 
   double get maxProb => math.max(playerProb, targetProb);
   bool get isRare => maxProb < kMaxProbThreshold;
-  bool get costly => (pointsLost ?? 0) > kMistakeSizePoints;
+  bool get costly => (pointsLost ?? 0) > mistakePoints;
 
   /// Whether the target rank plays this often enough for saying so to mean
   /// anything. See [kTargetPlaysItThreshold].
@@ -307,6 +324,25 @@ class ShapeGame extends ChangeNotifier {
       };
 
   bool get wantsFeedback => feedbackMode != FeedbackMode.off;
+
+  /// How many points a move must cost before it can be flagged.
+  double mistakePoints = kDefaultMistakePoints;
+
+  /// How far behind before the card says the game is probably decided.
+  double behindPoints = kDefaultBehindPoints;
+  bool warnWhenBehind = true;
+
+  /// Points *you* are behind by, or null if there is no estimate. Negative when
+  /// you are ahead.
+  double? get pointsBehind {
+    final black = scoreLeadForBlack;
+    if (black == null) return null;
+    return humanColor == Board.black ? -black : black;
+  }
+
+  /// Whether the card should say the game looks decided.
+  bool get isFarBehind =>
+      warnWhenBehind && (pointsBehind ?? 0) > behindPoints;
 
   /// Sampler settings, matching SHAPE's defaults.
   int topK = 50;
@@ -529,6 +565,7 @@ class ShapeGame extends ChangeNotifier {
       targetRel: tRel,
       moveLikeTarget: posteriorLikeTarget(pProb, tProb),
       pointsLost: _pointsLost(node, wasPass: false),
+      mistakePoints: mistakePoints,
     );
   }
 
@@ -764,6 +801,17 @@ class ShapeGame extends ChangeNotifier {
     }
     await _maybeOpponentMove();
     await _drainQueuedRefresh();
+  }
+
+  /// Redraw after a setting that changes only how existing analyses are read --
+  /// the mistake bar and the decided-game note need no new evaluation.
+  void notify() => notifyListeners();
+
+  /// Rebuild the card against the current thresholds, without re-analysing.
+  void refreshFeedback() {
+    final node = describedMove;
+    feedback = node == null ? null : feedbackFor(node);
+    notifyListeners();
   }
 
   Future<void> setFeedbackMode(FeedbackMode mode) async {

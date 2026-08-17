@@ -134,6 +134,27 @@ void main() {
     expect(posteriorLikeTarget(0.05, 0.20), closeTo(0.8, 0.001));
   });
 
+  test('the mistake bar can be moved without touching the other rules', () {
+    // 2 points lost: a mistake at the default bar, not at a higher one, and the
+    // rank comparison is untouched either way.
+    final f = fb(playerProb: 0.20, targetProb: 0.01, pointsLost: 2.0);
+    expect(f.verdict, MoveVerdict.mistake);
+
+    final lenient = MoveFeedback(
+      x: f.x,
+      y: f.y,
+      playerProb: f.playerProb,
+      playerRel: f.playerRel,
+      targetProb: f.targetProb,
+      targetRel: f.targetRel,
+      moveLikeTarget: f.moveLikeTarget,
+      pointsLost: f.pointsLost,
+      mistakePoints: 3.0,
+    );
+    expect(lenient.costly, isFalse);
+    expect(lenient.verdict, MoveVerdict.typical);
+  });
+
   test('threshold constants match desktop SHAPE defaults', () {
     expect(kMistakeSizePoints, 1.0); // mistake_size_spinbox
     expect(kTargetRankThreshold, 0.20); // target_rank_spinbox / 100

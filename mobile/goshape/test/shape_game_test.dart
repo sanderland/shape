@@ -13,6 +13,7 @@ import 'package:goshape/engine/analysis.dart';
 import 'package:goshape/engine/board.dart';
 import 'package:goshape/engine/features.dart';
 import 'package:goshape/game/shape_game.dart';
+import 'package:goshape/sgf_metadata.dart';
 
 const int posLen = 19;
 
@@ -673,6 +674,42 @@ void main() {
     expect(g.analysisEvals, fake.analyzedProfiles.last.length,
         reason: 'the count must match what was actually asked of the engine');
     expect(g.msPerEval, g.analysisMs ~/ g.analysisEvals);
+  });
+
+  test('being far behind is measured from your side of the board', () async {
+    // scoreLeadForBlack is points for Black; playing White, the same number means
+    // the opposite thing, and getting that backwards would congratulate you on a
+    // lost game.
+    final fake = FakeAnalyzer();
+    final g = newGame(fake);
+    fake.overrideFor = (profile, pos) => ProfileAnalysis(flatHalf(pos), 20.0);
+    g.humanColor = Board.black;
+    await g.start();
+
+    // lead is from the side to move's view, and Black is to move, so +20 for Black.
+    expect(g.scoreLeadForBlack, 20.0);
+    expect(g.pointsBehind, -20.0, reason: 'you are ahead, not behind');
+    expect(g.isFarBehind, isFalse);
+
+    g.humanColor = Board.white;
+    expect(g.pointsBehind, 20.0);
+    expect(g.isFarBehind, isTrue, reason: 'past the 15 point default');
+
+    g.behindPoints = 25;
+    expect(g.isFarBehind, isFalse, reason: 'the bar is settable');
+    g.behindPoints = 15;
+    g.warnWhenBehind = false;
+    expect(g.isFarBehind, isFalse, reason: 'and switchable');
+  });
+
+  test('every offered profile is one the encoder accepts', () {
+    // A rank in the picker that the metadata encoder rejects would throw on
+    // selection rather than at build time.
+    for (final r in kRanks) {
+      expect(() => getProfile(r), returnsNormally, reason: r);
+    }
+    expect(kRanks, contains('proyear_2015'));
+    expect(kRanks, contains('proyear_1850'));
   });
 
   test('review is unavailable before you have moved', () async {

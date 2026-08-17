@@ -411,24 +411,28 @@ class _HomePageState extends State<HomePage> {
               playerRank: g.playerRank,
               targetRank: g.targetRank,
               boardSize: g.boardSize,
+              pointsBehind: g.isFarBehind ? g.pointsBehind : null,
             ),
             const SizedBox(height: 6),
           ],
-          _labelled('Feedback after your move', SegmentedButton<FeedbackMode>(
+          // The off segment names the row, so neither needs a label line above it
+          // breaking the flow between the board and the controls.
+          SegmentedButton<FeedbackMode>(
+            showSelectedIcon: false,
             segments: const [
-              ButtonSegment(value: FeedbackMode.off, label: Text('Off')),
+              ButtonSegment(value: FeedbackMode.off, label: Text('Feedback off')),
               ButtonSegment(value: FeedbackMode.mistakesOnly, label: Text('Mistakes')),
               ButtonSegment(value: FeedbackMode.all, label: Text('Every move')),
             ],
             selected: {g.feedbackMode},
             onSelectionChanged:
                 analysisEnabled ? (s) => g.setFeedbackMode(s.first) : null,
-          )),
+          ),
           const SizedBox(height: 6),
-          _labelled('Show policy', SegmentedButton<HeatmapMode>(
+          SegmentedButton<HeatmapMode>(
             showSelectedIcon: false,
             segments: [
-              const ButtonSegment(value: HeatmapMode.off, label: Text('Off')),
+              const ButtonSegment(value: HeatmapMode.off, label: Text('Policy off')),
               ButtonSegment(
                   value: HeatmapMode.yourRank, label: Text(rankLabel(g.playerRank))),
               ButtonSegment(
@@ -438,7 +442,7 @@ class _HomePageState extends State<HomePage> {
             selected: {g.heatmapMode},
             onSelectionChanged:
                 analysisEnabled ? (s) => g.setHeatmapMode(s.first) : null,
-          )),
+          ),
           if (g.engineError != null) ...[
             const SizedBox(height: 4),
             Text('No engine — board only, no opponent or feedback. '
@@ -485,46 +489,109 @@ class _HomePageState extends State<HomePage> {
         FeedbackMode.mistakesOnly => g.feedback?.isMistake ?? false,
       };
 
-  /// Stretches [child] to full width: a SegmentedButton otherwise sizes to its
-  /// labels, leaving the two rows different widths.
-  Widget _labelled(String label, Widget child) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 3),
-            child: Text(label,
-                style: const TextStyle(fontSize: 11, color: Colors.black54)),
-          ),
-          child,
-        ],
-      );
-
   Future<void> _editRanks(ShapeGame g) => showModalBottomSheet<void>(
         context: context,
         showDragHandle: true,
-        builder: (_) => StatefulBuilder(
-          builder: (context, setSheetState) => Padding(
-            padding: EdgeInsets.fromLTRB(
-                16, 0, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              _rankPicker('Your rank', g.playerRank, (v) async {
-                await g.setRanks(player: v);
-                setSheetState(() {});
-              }),
-              const SizedBox(height: 10),
-              _rankPicker('Aiming at', g.targetRank, (v) async {
-                await g.setRanks(target: v);
-                setSheetState(() {});
-              }),
-              const SizedBox(height: 10),
-              _rankPicker('Opponent', g.opponentRank, (v) async {
-                await g.setRanks(opponent: v);
-                setSheetState(() {});
-              }),
-            ]),
+        isScrollControlled: true,
+        builder: (sheetContext) => StatefulBuilder(
+          builder: (context, setSheetState) => SingleChildScrollView(
+            child: Padding(
+              // viewInsets clears the keyboard; viewPadding clears the system
+              // navigation bar, which the sheet otherwise sits underneath.
+              padding: EdgeInsets.fromLTRB(
+                16,
+                0,
+                16,
+                16 +
+                    MediaQuery.of(context).viewInsets.bottom +
+                    MediaQuery.of(context).viewPadding.bottom,
+              ),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                _rankPicker('Your rank', g.playerRank, (v) async {
+                  await g.setRanks(player: v);
+                  setSheetState(() {});
+                }),
+                const SizedBox(height: 10),
+                _rankPicker('Aiming at', g.targetRank, (v) async {
+                  await g.setRanks(target: v);
+                  setSheetState(() {});
+                }),
+                const SizedBox(height: 10),
+                _rankPicker('Opponent', g.opponentRank, (v) async {
+                  await g.setRanks(opponent: v);
+                  setSheetState(() {});
+                }),
+                const Divider(height: 28),
+                _slider(
+                  'Flag mistakes over',
+                  '${g.mistakePoints.toStringAsFixed(1)} points',
+                  g.mistakePoints,
+                  min: 0.5,
+                  max: 5.0,
+                  divisions: 9,
+                  onChanged: (v) => setSheetState(() => g.mistakePoints = v),
+                  onSettled: () => g.refreshFeedback(),
+                ),
+                _slider(
+                  g.warnWhenBehind ? 'Say the game is decided at' : 'Decided-game note',
+                  g.warnWhenBehind
+                      ? '${g.behindPoints.toStringAsFixed(0)} points behind'
+                      : 'off',
+                  g.behindPoints,
+                  min: 5,
+                  max: 50,
+                  divisions: 9,
+                  enabled: g.warnWhenBehind,
+                  onChanged: (v) => setSheetState(() => g.behindPoints = v),
+                  onSettled: () => g.notify(),
+                  trailing: Switch(
+                    value: g.warnWhenBehind,
+                    onChanged: (v) {
+                      setSheetState(() => g.warnWhenBehind = v);
+                      g.notify();
+                    },
+                  ),
+                ),
+              ]),
+            ),
           ),
         ),
       );
+
+  /// A labelled slider with its current value shown, since a bare track says
+  /// nothing about what it is setting.
+  Widget _slider(
+    String label,
+    String value,
+    double current, {
+    required double min,
+    required double max,
+    required int divisions,
+    required ValueChanged<double> onChanged,
+    required VoidCallback onSettled,
+    bool enabled = true,
+    Widget? trailing,
+  }) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(
+            child: Text(label,
+                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          ),
+          Text(value,
+              style: const TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+          if (trailing != null) trailing,
+        ]),
+        Slider(
+          value: current.clamp(min, max),
+          min: min,
+          max: max,
+          divisions: divisions,
+          onChanged: enabled ? onChanged : null,
+          onChangeEnd: (_) => onSettled(),
+        ),
+      ]);
 
   Widget _rankPicker(
     String label,
