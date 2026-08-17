@@ -325,7 +325,14 @@ class ShapeGame extends ChangeNotifier {
 
   bool get hasEngine => engine != null && !_engineFailed;
   MoveFeedback? feedback;
+  /// The last analysis call: how long it took and how many net evaluations it
+  /// covered. One position needs one evaluation per profile, so the total on its
+  /// own is not comparable between moves -- three profiles at 100ms looks like a
+  /// slowdown next to one profile at 100ms.
   int analysisMs = 0;
+  int analysisEvals = 0;
+
+  int get msPerEval => analysisEvals == 0 ? 0 : analysisMs ~/ analysisEvals;
 
   ShapeGame(this.engine, {this.boardSize = 19, math.Random? random})
       : rng = random ?? math.Random() {
@@ -426,6 +433,7 @@ class ShapeGame extends ChangeNotifier {
     try {
       final result = await engine!.analyze(buildPosition(), want);
       analysisMs = sw.elapsedMilliseconds;
+      analysisEvals = want.length;
       node.analyses.addAll(result);
     } catch (e) {
       // Inference failing once means it will fail again, so stop asking and say so

@@ -652,6 +652,21 @@ void main() {
         reason: 'a change made during a move must not be lost either');
   });
 
+  test('timing is reported per evaluation, not per analysis call', () async {
+    // A position needs one net call per profile, so the total for a call says
+    // nothing until you know how many it covered.
+    final fake = FakeAnalyzer();
+    final g = newGame(fake, autoplay: true);
+    g.feedbackMode = FeedbackMode.all;
+    await g.start();
+    await g.playAt(2, 2);
+
+    expect(g.analysisEvals, greaterThan(0));
+    expect(g.analysisEvals, fake.analyzedProfiles.last.length,
+        reason: 'the count must match what was actually asked of the engine');
+    expect(g.msPerEval, g.analysisMs ~/ g.analysisEvals);
+  });
+
   test('review is unavailable before you have moved', () async {
     final fake = FakeAnalyzer();
     final g = newGame(fake, autoplay: true);

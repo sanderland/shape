@@ -271,7 +271,8 @@ class _HomePageState extends State<HomePage> {
                 Text('score ${GameNotice.scoreLabel(g.scoreLeadForBlack) ?? "--"}'
                     '   (${rankLabel(kReferenceProfile)}, no search)'),
                 Text(g.hasEngine
-                    ? '${g.engine!.provider}   ${g.analysisMs} ms/move'
+                    ? '${g.engine!.provider}   ${g.msPerEval} ms/eval'
+                        '   x${g.analysisEvals} = ${g.analysisMs} ms'
                     : 'no engine'),
               ]),
             ),
