@@ -148,6 +148,12 @@ class _HomePageState extends State<HomePage> {
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
+            tooltip: 'First move',
+            onPressed: navEnabled && g.canGoBack ? g.goFirst : null,
+            icon: const Icon(Icons.first_page),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
             tooltip: 'Back',
             onPressed: navEnabled && g.canGoBack ? g.goPrev : null,
             icon: const Icon(Icons.chevron_left),
@@ -225,16 +231,6 @@ class _HomePageState extends State<HomePage> {
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.skip_next),
               title: Text('Pass'),
-            ),
-          ),
-          PopupMenuItem(
-            value: 'first',
-            enabled: !g.busy && g.canGoBack,
-            child: const ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.first_page),
-              title: Text('First move'),
             ),
           ),
           PopupMenuItem(
