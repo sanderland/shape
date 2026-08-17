@@ -12,7 +12,7 @@ import java.io.File
  *
  * MNN ships prebuilt Android .so files with a complete JNI, so this is a thin
  * method channel rather than an NDK build. Only what the engine needs: load the
- * model, run one three-input/three-output evaluation, release.
+ * model, run one three-input/two-output evaluation, release.
  */
 class MainActivity : FlutterActivity() {
     private var netPtr = 0L
@@ -29,7 +29,7 @@ class MainActivity : FlutterActivity() {
         const val FORWARD_CPU = 0
         const val NUM_THREADS = 4
         val INPUT_NAMES = arrayOf("bin_input", "global_input", "input_meta")
-        val OUTPUT_NAMES = arrayOf("policy", "value", "lead")
+        val OUTPUT_NAMES = arrayOf("policy", "lead")
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -39,7 +39,10 @@ class MainActivity : FlutterActivity() {
                 try {
                     when (call.method) {
                         "cacheDir" -> result.success(cacheDir.absolutePath)
-                        "load" -> result.success(load(call.argument<String>("path")!!))
+                        "load" -> {
+                            load(call.argument<String>("path")!!)
+                            result.success(null)
+                        }
                         "run" -> result.success(
                             run(
                                 call.argument<FloatArray>("bin")!!,
@@ -61,14 +64,13 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * [path] is a real file, extracted by the Dart side via rootBundle.
+     * [path] is a real file, extracted on the Dart side via rootBundle.
      *
-     * Extraction deliberately does NOT go through AssetManager here: opening
-     * flutter_assets/... that way returned FileNotFoundException on device even
-     * though the entry is present in the APK. rootBundle already loads the 107MB
-     * ONNX without trouble, so the Dart side writes the model out and hands over
-     * a path.
+     * Deliberately not read through AssetManager here: opening flutter_assets/...
+     * that way returns FileNotFoundException on device even though the entry is in
+     * the APK. Moving extraction back into Kotlin will hit that again.
      */
+
     /**
      * True on the Android emulator, which cannot run this library.
      *
@@ -88,7 +90,7 @@ class MainActivity : FlutterActivity() {
             Build.HARDWARE.contains("goldfish") ||
             Build.HARDWARE.contains("ranchu")
 
-    private fun load(path: String): Map<String, Any> {
+    private fun load(path: String) {
         check(!isEmulator()) {
             "not supported on the Android emulator, which advertises CPU features " +
                 "it does not implement"
@@ -127,7 +129,6 @@ class MainActivity : FlutterActivity() {
             check(t != 0L) { "missing output $name" }
             outputs[name] = t
         }
-        return mapOf("ok" to true)
     }
 
     private fun run(bin: FloatArray, global: FloatArray, meta: FloatArray): Map<String, FloatArray> {

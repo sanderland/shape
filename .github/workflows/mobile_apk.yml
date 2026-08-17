@@ -51,8 +51,7 @@ jobs:
           pip install --quiet \
             'torch>=2.4' --index-url https://download.pytorch.org/whl/cpu
           pip install --quiet 'numpy>=1.26' 'onnx>=1.16' 'onnxruntime>=1.19' packaging
-          # MNN ships the ONNX converter in its Python package; the app benchmarks
-          # MNN's GPU backends against ONNX Runtime, which has none on Android.
+          # MNN ships the converter used to produce the app's gameplay model.
           pip install --quiet 'MNN==3.6.1'
 
       - name: Fetch KataGo python package
@@ -86,8 +85,7 @@ jobs:
           # Featurizer fixtures, so the Dart port is checked against a model+featurizer
           # pair generated together rather than whatever is committed.
           python export_fixtures.py
-          # Same net for MNN. Converted from the ONNX just produced, so the two
-          # runtimes in the benchmark are provably the same weights.
+          # Convert the exported net to the MNN model used by the app.
           mnnconvert -f ONNX --modelFile "$SHAPE_ONNX_OUT" \
                      --MNNModel "$GITHUB_WORKSPACE/out/humanv0.mnn" --bizCode shape
 
@@ -207,7 +205,7 @@ jobs:
               marker,
               '### 📱 SHAPE for Android — APK',
               '',
-              `**[Download the APK](${process.env.ARTIFACT_URL})** (arm64-v8a, debug-signed)`,
+              `**[Download the APK](${process.env.ARTIFACT_URL})** (arm64-v8a, sideload-signed)`,
               '',
               'Open that link on the phone while signed into GitHub, unzip, and install the `.apk`.',
               'It needs no network and no permissions.',

@@ -251,7 +251,7 @@ class ShapeGame extends ChangeNotifier {
   GameNode root = GameNode();
 
   /// Where you are looking.
-  GameNode current = GameNode();
+  late GameNode current;
 
   late GoPosition pos;
 
@@ -333,14 +333,6 @@ class ShapeGame extends ChangeNotifier {
     pos = GoPosition(boardSize, Rules.japanese);
   }
 
-  /// True from the moment you play until the automatic reply has landed.
-  ///
-  /// Whether that window is open cannot be read off the position: "the opponent is
-  /// to move" is also true when you have browsed to one of your own moves and are
-  /// sitting there looking at it. Only the app knows whether it is about to move
-  /// on, so it says so here rather than being guessed at.
-  bool autoReplyPending = false;
-
   /// Would autoplay move on from where we are now?
   bool get _autoReplyWouldFire =>
       hasEngine && autoplayOpponent && !gameOver && pos.nextPlayer != humanColor;
@@ -350,9 +342,11 @@ class ShapeGame extends ChangeNotifier {
   ///
   /// "Mistakes only" costs the same as "all": you cannot know a move was a
   /// mistake without evaluating it.
-  List<String> get activeProfiles {
+  List<String> get activeProfiles => _profilesFor(autoReply: false);
+
+  List<String> _profilesFor({required bool autoReply}) {
     final needed = <String>{};
-    if (autoReplyPending) {
+    if (autoReply) {
       // Nobody sees this position -- the reply lands moments later -- so it needs
       // only the opponent's policy to sample from and, for feedback, the reference
       // lead that points-lost for the move you just played is measured against.
@@ -412,8 +406,7 @@ class ShapeGame extends ChangeNotifier {
   }
 
   Future<void> start() async {
-    autoReplyPending = _autoReplyWouldFire;
-    await _analyzeCurrent();
+    await _analyzeCurrent(autoReply: _autoReplyWouldFire);
     await _maybeOpponentMove();
   }
 
@@ -442,7 +435,8 @@ class ShapeGame extends ChangeNotifier {
     }
   }
 
-  Future<void> _analyzeCurrent() => _analyze(current, () => pos, activeProfiles);
+  Future<void> _analyzeCurrent({bool autoReply = false}) =>
+      _analyze(current, () => pos, _profilesFor(autoReply: autoReply));
 
   /// Points the side that just moved gave up, per the reference profile.
   ///
@@ -570,8 +564,7 @@ class ShapeGame extends ChangeNotifier {
       final mover = pos.nextPlayer;
       pos.play(mover, loc);
       current = current.childFor(Move(mover, loc));
-      autoReplyPending = _autoReplyWouldFire;
-      await _analyzeCurrent();
+      await _analyzeCurrent(autoReply: _autoReplyWouldFire);
       await _updateFeedback();
     } catch (e) {
       error = '$e';
@@ -588,10 +581,7 @@ class ShapeGame extends ChangeNotifier {
     if (!hasEngine) return;
     if (!autoplayOpponent || gameOver || humanToPlay || busy) return;
 
-    // Their answer to this position is already in the tree, so follow it. Sampling
-    // again would invent a second reply to a position they have already answered,
-    // and returning here instead would strand the game on their turn with the board
-    // refusing input until Forward was pressed by hand.
+    // Follow a reply already in the tree instead of sampling another variation.
     if (!atTip) {
       await _goToNode(current.children.first);
       return;
@@ -610,29 +600,17 @@ class ShapeGame extends ChangeNotifier {
           excludePass: false,
         );
         final choice = analysis.policy.pick(candidates, rng);
-        var loc = (choice == null || choice.isPass)
+        final loc = (choice == null || choice.isPass)
             ? Board.passLoc
             : pos.board.loc(choice.x!, choice.y!);
-        // The sampler can offer an illegal move (ko); fall back to the best legal one.
-        if (loc != Board.passLoc && !pos.board.wouldBeLegal(pos.nextPlayer, loc)) {
-          final legal = candidates.firstWhere(
-            (m) => !m.isPass &&
-                pos.board.wouldBeLegal(pos.nextPlayer, pos.board.loc(m.x!, m.y!)),
-            orElse: () => const PolicyMove(null, null, 0),
-          );
-          loc = legal.isPass ? Board.passLoc : pos.board.loc(legal.x!, legal.y!);
-        }
         final mover = pos.nextPlayer;
         pos.play(mover, loc);
         current = current.childFor(Move(mover, loc));
-        // The reply has landed, so this position is one you are looking at.
-        autoReplyPending = false;
         await _analyzeCurrent();
       }
     } catch (e) {
       error = '$e';
     } finally {
-      autoReplyPending = false;
       busy = false;
       notifyListeners();
     }
@@ -643,8 +621,6 @@ class ShapeGame extends ChangeNotifier {
   Future<void> _goToNode(GameNode target, {bool keepReview = false}) async {
     if (busy) return;
     if (!keepReview) _reviewReturn = null;
-    // Wherever browsing lands is a position on screen, not one being passed through.
-    autoReplyPending = false;
     busy = true;
     notifyListeners();
     try {
@@ -722,9 +698,10 @@ class ShapeGame extends ChangeNotifier {
   Future<void> goFirst() => _goToNode(root);
   Future<void> goLast() => _goToNode(current.endOfMainLine);
 
-  /// Step back one exchange, so you land on your own move rather than the reply.
-  Future<void> goPrev() => _goToNode(_up(current, autoplayOpponent ? 2 : 1));
-  Future<void> goNext() => _goToNode(_down(current, autoplayOpponent ? 2 : 1));
+  /// Step one exchange when an engine is replying, otherwise one move.
+  int get _navigationStep => hasEngine && autoplayOpponent ? 2 : 1;
+  Future<void> goPrev() => _goToNode(_up(current, _navigationStep));
+  Future<void> goNext() => _goToNode(_down(current, _navigationStep));
 
   Future<void> newGame({int? size}) async {
     if (busy) return;
@@ -738,8 +715,7 @@ class ShapeGame extends ChangeNotifier {
       error = null;
       boardSize = size ?? boardSize;
       pos = GoPosition(boardSize, Rules.japanese);
-      autoReplyPending = _autoReplyWouldFire;
-      await _analyzeCurrent();
+      await _analyzeCurrent(autoReply: _autoReplyWouldFire);
     } catch (e) {
       error = '$e';
     } finally {

@@ -34,18 +34,6 @@ class Rules {
     this.asymPowersOfTwo = 0.0,
   });
 
-  Rules withKomi(double komi) => Rules(
-        koRule: koRule,
-        scoringRule: scoringRule,
-        taxRule: taxRule,
-        multiStoneSuicideLegal: multiStoneSuicideLegal,
-        hasButton: hasButton,
-        encorePhase: encorePhase,
-        passWouldEndPhase: passWouldEndPhase,
-        whiteKomi: komi,
-        asymPowersOfTwo: asymPowersOfTwo,
-      );
-
   static const japanese = Rules(
     koRule: 'KO_SIMPLE',
     scoringRule: 'SCORING_TERRITORY',
@@ -109,8 +97,6 @@ class GoPosition {
 
   int get nextPlayer => board.pla;
 
-  bool isLegal(int pla, int loc) => board.wouldBeLegal(pla, loc);
-
   void play(int pla, int loc) {
     board.play(pla, loc);
     moves.add(Move(pla, loc));
@@ -122,18 +108,6 @@ class GoPosition {
     moves.removeLast();
     boards.removeLast();
     board = boards.last.copy();
-  }
-
-  GoPosition copy() {
-    final p = GoPosition(boardSize, rules);
-    p.board = board.copy();
-    p.boards
-      ..clear()
-      ..addAll(boards.map((b) => b.copy()));
-    p.moves
-      ..clear()
-      ..addAll(moves);
-    return p;
   }
 }
 
@@ -386,16 +360,11 @@ class Features {
 }
 
 /// Column letters used by GTP, skipping I.
-const String gtpCols = 'ABCDEFGHJKLMNOPQRST';
-
-String locToGtp(int loc, Board b) {
-  if (loc == Board.passLoc) return 'pass';
-  return '${gtpCols[b.locX(loc)]}${b.ySize - b.locY(loc)}';
-}
+const String _gtpCols = 'ABCDEFGHJKLMNOPQRST';
 
 int gtpToLoc(String gtp, Board b) {
   if (gtp.toLowerCase() == 'pass') return Board.passLoc;
-  final x = gtpCols.indexOf(gtp[0].toUpperCase());
+  final x = _gtpCols.indexOf(gtp[0].toUpperCase());
   final y = b.ySize - int.parse(gtp.substring(1));
   return b.loc(x, y);
 }

@@ -61,7 +61,7 @@ class FakeAnalyzer implements Analyzer {
     return {
       for (final p in profiles)
         p: overrideFor?.call(p, pos) ??
-            ProfileAnalysis(policy, encodeLine(pos), 0.5),
+            ProfileAnalysis(policy, encodeLine(pos)),
     };
   }
 
@@ -77,37 +77,37 @@ class FakeAnalyzer implements Analyzer {
         }
       }
     }
-    return PolicyData(data, posLen, pos.boardSize);
+    return PolicyData(data, posLen, pos.board);
   }
 }
 
 /// Every point equally likely.
-PolicyData flatHalf() {
+PolicyData flatHalf(GoPosition pos) {
   final d = Float32List(posLen * posLen + 1);
   for (var y = 0; y < 9; y++) {
     for (var x = 0; x < 9; x++) {
       d[y * posLen + x] = 0.5;
     }
   }
-  return PolicyData(d, posLen, 9);
+  return PolicyData(d, posLen, pos.board);
 }
 
 /// Same, except the diagonal is never played -- where the test puts every move.
-PolicyData avoidsDiagonal() {
+PolicyData avoidsDiagonal(GoPosition pos) {
   final d = Float32List(posLen * posLen + 1);
   for (var y = 0; y < 9; y++) {
     for (var x = 0; x < 9; x++) {
       d[y * posLen + x] = x == y ? 0.0 : 0.5;
     }
   }
-  return PolicyData(d, posLen, 9);
+  return PolicyData(d, posLen, pos.board);
 }
 
 PolicyData passHeavy(GoPosition pos) {
   final data = Float32List(posLen * posLen + 1);
   data[posLen * posLen] = 1.0; // pass dominates
   data[0] = 0.001; // one legal alternative, below min_p
-  return PolicyData(data, posLen, pos.boardSize);
+  return PolicyData(data, posLen, pos.board);
 }
 
 ShapeGame newGame(FakeAnalyzer fake, {bool autoplay = false}) {
@@ -224,6 +224,19 @@ void main() {
     await g.goPrev();
     await g.goNext();
     expect(fake.calls, before, reason: 'navigation should be a pure cache hit');
+  });
+
+  test('board-only navigation steps one move at a time', () async {
+    final g = ShapeGame(null, boardSize: 9);
+    await g.start();
+    await g.playAt(2, 2);
+    await g.playAt(4, 4);
+    await g.playAt(6, 6);
+
+    await g.goPrev();
+    expect(g.cursor, 2);
+    await g.goNext();
+    expect(g.cursor, 3);
   });
 
   test('opponent can pass', () async {
@@ -492,9 +505,8 @@ void main() {
     final fake = FakeAnalyzer();
     final g = ShapeGame(fake, boardSize: 9, random: Random(2));
     fake.overrideFor = (profile, pos) => ProfileAnalysis(
-          profile == g.targetRank ? avoidsDiagonal() : flatHalf(),
+          profile == g.targetRank ? avoidsDiagonal(pos) : flatHalf(pos),
           1.5,
-          0.5,
         );
     g.feedbackMode = FeedbackMode.all;
     g.autoplayOpponent = false;

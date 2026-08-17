@@ -25,19 +25,30 @@ class PolicyData {
   final Float32List data; // posLen*posLen + 1
   final int posLen;
   final int boardSize;
+  final Uint8List _legal;
   late final double maxProb;
 
-  PolicyData(this.data, this.posLen, this.boardSize) {
+  PolicyData(this.data, this.posLen, Board board)
+      : boardSize = board.xSize,
+        _legal = Uint8List(board.xSize * board.ySize) {
     var m = 0.0;
-    for (final v in data) {
-      if (v > m) m = v;
+    for (var y = 0; y < board.ySize; y++) {
+      for (var x = 0; x < board.xSize; x++) {
+        if (!board.wouldBeLegal(board.pla, board.loc(x, y))) continue;
+        _legal[y * board.xSize + x] = 1;
+        final p = probAt(x, y);
+        if (p > m) m = p;
+      }
     }
+    if (passProb > m) m = passProb;
     maxProb = m;
   }
 
   double get passProb => data[posLen * posLen];
 
   double probAt(int x, int y) => data[y * posLen + x];
+
+  bool isLegalAt(int x, int y) => _legal[y * boardSize + x] != 0;
 
   /// prob and prob relative to the best move, as SHAPE's `PolicyData.at` returns.
   (double, double) at(int? x, int? y) {
@@ -55,6 +66,7 @@ class PolicyData {
     final moves = <PolicyMove>[];
     for (var y = 0; y < boardSize; y++) {
       for (var x = 0; x < boardSize; x++) {
+        if (!isLegalAt(x, y)) continue;
         final p = probAt(x, y);
         if (p > 0) moves.add(PolicyMove(x, y, p));
       }
@@ -95,8 +107,7 @@ class PolicyData {
 class ProfileAnalysis {
   final PolicyData policy;
   final double lead; // score lead for the side to move, from the net's value head
-  final double winrate;
-  ProfileAnalysis(this.policy, this.lead, this.winrate);
+  ProfileAnalysis(this.policy, this.lead);
 }
 
 /// What the game loop needs from an engine. Lets tests drive the whole loop --
@@ -191,9 +202,8 @@ class ShapeEngine implements Analyzer {
       final meta = getProfile(profile).getMetadataRow(pos.nextPlayer, boardArea);
       final o = await runner.run(f.bin, f.global, meta);
       out[profile] = ProfileAnalysis(
-        PolicyData(o.policy, posLen, pos.boardSize),
+        PolicyData(o.policy, posLen, pos.board),
         o.lead,
-        o.winrate,
       );
     }
     return out;

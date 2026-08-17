@@ -62,19 +62,27 @@ class _HomePageState extends State<HomePage> {
       debugPrint('$e\n$st');
       engineError = describeFailure(e);
     }
+    if (!mounted) {
+      await engine?.close();
+      return;
+    }
+    setState(() => status = 'analyzing…');
+
+    final g = ShapeGame(engine, boardSize: 19)..engineError = engineError;
     try {
-      final g = ShapeGame(engine, boardSize: 19)..engineError = engineError;
-      g.addListener(_onGameChanged);
-      setState(() {
-        game = g;
-        status = 'analyzing…';
-      });
       await g.start();
-      setState(() => status = 'ready');
     } catch (e, st) {
       debugPrint('$e\n$st');
-      setState(() => loadError = e);
+      await engine?.close();
+      if (mounted) setState(() => loadError = e);
+      return;
     }
+    if (!mounted) {
+      await engine?.close();
+      return;
+    }
+    g.addListener(_onGameChanged);
+    setState(() => game = g);
   }
 
   void _onGameChanged() {

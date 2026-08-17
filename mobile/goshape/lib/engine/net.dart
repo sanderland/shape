@@ -18,9 +18,8 @@ class NetOutputs {
 
   /// Score lead for the side to move.
   final double lead;
-  final double winrate;
 
-  const NetOutputs(this.policy, this.lead, this.winrate);
+  const NetOutputs(this.policy, this.lead);
 }
 
 /// The net, loaded and callable. Abstract so the game loop can be tested against
@@ -77,13 +76,16 @@ class MnnRunner implements NetRunner {
     final dir = await _channel.invokeMethod<String>('cacheDir');
     final file = File('$dir/${kMnnAsset.split('/').last}');
     final data = await rootBundle.load(kMnnAsset);
+    final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
 
-    // Re-extract if a previous run was interrupted part-way through writing.
-    if (!file.existsSync() || file.lengthSync() != data.lengthInBytes) {
-      await file.writeAsBytes(
-        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-        flush: true,
-      );
+    // Written to a temp file and renamed, so a partial write can never appear at
+    // the destination and the length is enough to tell a stale copy from a current
+    // one. Hashing the model instead costs ~0.5s of every launch to detect
+    // something the rename prevents and verifyAgainstReference already catches.
+    if (!file.existsSync() || file.lengthSync() != bytes.length) {
+      final temp = File('${file.path}.tmp');
+      await temp.writeAsBytes(bytes, flush: true);
+      await temp.rename(file.path);
     }
     return file.path;
   }
@@ -98,8 +100,6 @@ class MnnRunner implements NetRunner {
     return NetOutputs(
       out!['policy'] as Float32List,
       (out['lead'] as Float32List).first,
-      // value is a softmax over {win, loss, noresult} for the side to move.
-      (out['value'] as Float32List).first,
     );
   }
 

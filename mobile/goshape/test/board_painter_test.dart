@@ -16,7 +16,8 @@ import 'package:goshape/game/shape_game.dart';
 
 const int posLen = 19;
 
-PolicyData policyOver(int boardSize) {
+PolicyData policyOver(Board board) {
+  final boardSize = board.xSize;
   final data = Float32List(posLen * posLen + 1);
   var v = 1.0;
   for (var y = 0; y < boardSize; y++) {
@@ -25,7 +26,7 @@ PolicyData policyOver(int boardSize) {
       v *= 0.97;
     }
   }
-  return PolicyData(data, posLen, boardSize);
+  return PolicyData(data, posLen, board);
 }
 
 void main() {
@@ -61,7 +62,7 @@ void main() {
 
       final painter = BoardPainter(
         board: board,
-        heatmap: policyOver(size),
+        heatmap: policyOver(board),
         lastMove: (3, 3),
         markedMove: (2, 2),
         markColor: const Color(0xFFEF6C00),
@@ -80,7 +81,7 @@ void main() {
   test('a policy is read by board coordinates, not tensor coordinates', () {
     // On a 9x9 board, (8,0) is the top-right corner; reading it at tensor width 19
     // would land on a point that is off the board entirely.
-    final p = policyOver(9);
+    final p = policyOver(Board(9, 9));
     expect(p.probAt(8, 0), greaterThan(0));
     expect(p.probAt(0, 1), greaterThan(0));
     expect(p.sample(excludePass: true).length, 81);

@@ -112,7 +112,7 @@ class BoardPainter extends CustomPainter {
       final idx = <int>[];
       for (var y = 0; y < n; y++) {
         for (var x = 0; x < n; x++) {
-          if (board.board[board.loc(x, y)] == Board.empty) idx.add(y * n + x);
+          if (h.isLegalAt(x, y)) idx.add(y * n + x);
         }
       }
       idx.sort((a, b) =>

@@ -27,7 +27,7 @@ class RecordingRunner implements NetRunner {
     metasSeen.add(meta);
     binsSeen.add(bin);
     final policy = Float32List(kPolicyLen)..[0] = meta[0];
-    return NetOutputs(policy, meta[0] * 10, meta[0] / 100);
+    return NetOutputs(policy, meta[0] * 10);
   }
 
   @override
@@ -79,7 +79,6 @@ void main() {
       final tag = runner.metasSeen
           .firstWhere((m) => m[0] == e.value.policy.data[0])[0];
       expect(e.value.lead, closeTo(tag * 10, 1e-4));
-      expect(e.value.winrate, closeTo(tag / 100, 1e-6));
     }
   });
 
