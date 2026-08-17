@@ -143,8 +143,7 @@ class _HomePageState extends State<HomePage> {
         titleSpacing: 0,
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
-          // Double chevrons in the mistake colour: the shape says jump, the colour
-          // says what to. Jump-to-first lives in the menu -- it is rarer than these.
+          // Double chevrons in the mistake colour jump between flagged moves.
           IconButton(
             tooltip: 'Previous mistake',
             visualDensity: VisualDensity.compact,
@@ -222,8 +221,6 @@ class _HomePageState extends State<HomePage> {
           switch (v) {
             case 'pass':
               await g.pass();
-            case 'first':
-              await g.goFirst();
             case 'new':
               await _newGame(g);
             case 'ranks':
@@ -405,13 +402,14 @@ class _HomePageState extends State<HomePage> {
             opponentRank: g.opponentRank,
             scoreLeadForBlack: g.scoreLeadForBlack,
           ),
+          if (g.lowWinProbability case final probability?)
+            LowWinNotice(probability: probability),
           if (_showCard(g)) ...[
             FeedbackCard(
               feedback: g.feedback,
               playerRank: g.playerRank,
               targetRank: g.targetRank,
               boardSize: g.boardSize,
-              pointsBehind: g.isFarBehind ? g.pointsBehind : null,
             ),
             const SizedBox(height: 6),
           ],
@@ -509,17 +507,17 @@ class _HomePageState extends State<HomePage> {
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 _rankPicker('Your rank', g.playerRank, (v) async {
                   await g.setRanks(player: v);
-                  setSheetState(() {});
+                  if (sheetContext.mounted) setSheetState(() {});
                 }),
                 const SizedBox(height: 10),
                 _rankPicker('Aiming at', g.targetRank, (v) async {
                   await g.setRanks(target: v);
-                  setSheetState(() {});
+                  if (sheetContext.mounted) setSheetState(() {});
                 }),
                 const SizedBox(height: 10),
                 _rankPicker('Opponent', g.opponentRank, (v) async {
                   await g.setRanks(opponent: v);
-                  setSheetState(() {});
+                  if (sheetContext.mounted) setSheetState(() {});
                 }),
                 const Divider(height: 28),
                 _slider(
@@ -529,29 +527,39 @@ class _HomePageState extends State<HomePage> {
                   min: 0.5,
                   max: 5.0,
                   divisions: 9,
-                  onChanged: (v) => setSheetState(() => g.mistakePoints = v),
-                  onSettled: () => g.refreshFeedback(),
+                  onChanged: (v) {
+                    setSheetState(() {});
+                    g.setMistakePoints(v);
+                  },
                 ),
-                _slider(
-                  g.warnWhenBehind ? 'Say the game is decided at' : 'Decided-game note',
-                  g.warnWhenBehind
-                      ? '${g.behindPoints.toStringAsFixed(0)} points behind'
-                      : 'off',
-                  g.behindPoints,
-                  min: 5,
-                  max: 50,
-                  divisions: 9,
-                  enabled: g.warnWhenBehind,
-                  onChanged: (v) => setSheetState(() => g.behindPoints = v),
-                  onSettled: () => g.notify(),
-                  trailing: Switch(
-                    value: g.warnWhenBehind,
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Low win-chance note',
+                      style: TextStyle(fontSize: 12)),
+                  subtitle: Text(
+                      'After two of your turns at or below '
+                      '${(g.lowWinThreshold * 100).toStringAsFixed(0)}%, '
+                      'clearing at ${(g.lowWinThreshold * 200).toStringAsFixed(0)}%',
+                      style: const TextStyle(fontSize: 11)),
+                  value: g.showLowWinNote,
+                  onChanged: (v) {
+                    setSheetState(() {});
+                    g.setShowLowWinNote(v);
+                  },
+                ),
+                if (g.showLowWinNote)
+                  _slider(
+                    'Call the game decided below',
+                    '${(g.lowWinThreshold * 100).toStringAsFixed(0)}% win chance',
+                    g.lowWinThreshold,
+                    min: 0.01,
+                    max: 0.20,
+                    divisions: 19,
                     onChanged: (v) {
-                      setSheetState(() => g.warnWhenBehind = v);
-                      g.notify();
+                      setSheetState(() {});
+                      g.setLowWinThreshold(v);
                     },
                   ),
-                ),
               ]),
             ),
           ),
@@ -568,9 +576,6 @@ class _HomePageState extends State<HomePage> {
     required double max,
     required int divisions,
     required ValueChanged<double> onChanged,
-    required VoidCallback onSettled,
-    bool enabled = true,
-    Widget? trailing,
   }) =>
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
@@ -581,15 +586,13 @@ class _HomePageState extends State<HomePage> {
           Text(value,
               style: const TextStyle(
                   fontSize: 12, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
-          if (trailing != null) trailing,
         ]),
         Slider(
           value: current.clamp(min, max),
           min: min,
           max: max,
           divisions: divisions,
-          onChanged: enabled ? onChanged : null,
-          onChangeEnd: (_) => onSettled(),
+          onChanged: onChanged,
         ),
       ]);
 

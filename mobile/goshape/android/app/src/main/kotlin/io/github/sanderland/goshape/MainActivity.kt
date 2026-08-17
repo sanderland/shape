@@ -12,7 +12,7 @@ import java.io.File
  *
  * MNN ships prebuilt Android .so files with a complete JNI, so this is a thin
  * method channel rather than an NDK build. Only what the engine needs: load the
- * model, run one three-input/two-output evaluation, release.
+ * model, run one three-input/three-output evaluation, release.
  */
 class MainActivity : FlutterActivity() {
     private var netPtr = 0L
@@ -29,7 +29,7 @@ class MainActivity : FlutterActivity() {
         const val FORWARD_CPU = 0
         const val NUM_THREADS = 4
         val INPUT_NAMES = arrayOf("bin_input", "global_input", "input_meta")
-        val OUTPUT_NAMES = arrayOf("policy", "lead")
+        val OUTPUT_NAMES = arrayOf("policy", "value", "lead")
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -67,16 +67,14 @@ class MainActivity : FlutterActivity() {
     /** Version name and code, straight from the installed package. */
     private fun appVersion(): String {
         val info = packageManager.getPackageInfo(packageName, 0)
-        return "${info.versionName} (${info.longVersionCode})"
+        @Suppress("DEPRECATION")
+        val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.longVersionCode
+        } else {
+            info.versionCode.toLong()
+        }
+        return "${info.versionName} ($code)"
     }
-
-    /**
-     * [path] is a real file, extracted on the Dart side via rootBundle.
-     *
-     * Deliberately not read through AssetManager here: opening flutter_assets/...
-     * that way returns FileNotFoundException on device even though the entry is in
-     * the APK. Moving extraction back into Kotlin will hit that again.
-     */
 
     /**
      * True on the Android emulator, which cannot run this library.
@@ -97,6 +95,10 @@ class MainActivity : FlutterActivity() {
             Build.HARDWARE.contains("goldfish") ||
             Build.HARDWARE.contains("ranchu")
 
+    /**
+     * [path] is a real file, extracted on the Dart side via rootBundle.
+     * AssetManager could not open the bundled model on a physical device.
+     */
     private fun load(path: String) {
         check(!isEmulator()) {
             "not supported on the Android emulator, which advertises CPU features " +

@@ -32,7 +32,10 @@ class NetOutputs {
   /// Score lead for the side to move.
   final double lead;
 
-  const NetOutputs(this.policy, this.lead);
+  /// Softmax over win, loss, and no result for the side to move.
+  final Float32List outcome;
+
+  const NetOutputs(this.policy, this.lead, this.outcome);
 }
 
 /// The net, loaded and callable. Abstract so the game loop can be tested against
@@ -113,6 +116,7 @@ class MnnRunner implements NetRunner {
     return NetOutputs(
       out!['policy'] as Float32List,
       (out['lead'] as Float32List).first,
+      out['value'] as Float32List,
     );
   }
 

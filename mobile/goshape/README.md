@@ -26,7 +26,7 @@ move -> GoPosition.play
      -> Features.fillRowFeatures   22 board planes + 19 globals
      -> SgfMetadata.getMetadataRow 192 profile channels
      -> MNN CPU                    b18c384nbt-humanv0
-     -> policy + lead              opponent, feedback, and score estimate
+     -> policy + lead + outcome    opponent, feedback, score, and win estimate
 ```
 
 `lib/engine/board.dart` and `lib/engine/features.dart` port the corresponding

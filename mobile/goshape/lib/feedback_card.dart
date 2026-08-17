@@ -25,16 +25,12 @@ class FeedbackCard extends StatelessWidget {
   final String targetRank;
   final int boardSize;
 
-  /// How far behind you are, when that is far enough to be worth saying.
-  final double? pointsBehind;
-
   const FeedbackCard({
     super.key,
     required this.feedback,
     required this.playerRank,
     required this.targetRank,
     required this.boardSize,
-    this.pointsBehind,
   });
 
   @override
@@ -111,20 +107,6 @@ class FeedbackCard extends StatelessWidget {
               child: Text('Under 1% at both ranks.',
                   style: TextStyle(fontSize: 12, color: Colors.black54)),
             ),
-          // Said once the result is not really in doubt, because that is the point
-          // at which the shapes stop being the thing you are practising.
-          if (pointsBehind != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                '${pointsBehind!.toStringAsFixed(0)} points behind. '
-                'Shape matters less once a game is decided.',
-                style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFFE65100),
-                    fontStyle: FontStyle.italic),
-              ),
-            ),
         ]),
       ),
     );
@@ -153,7 +135,29 @@ class FeedbackCard extends StatelessWidget {
           ),
         ]),
       );
+}
 
+class LowWinNotice extends StatelessWidget {
+  final double probability;
+
+  const LowWinNotice({super.key, required this.probability});
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = probability * 100;
+    final digits = percent < 1 ? 1 : 0;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        'Estimated win chance ${percent.toStringAsFixed(digits)}%. '
+        'Start a new game if you want a closer practice position.',
+        style: const TextStyle(
+            fontSize: 12,
+            color: Color(0xFFE65100),
+            fontStyle: FontStyle.italic),
+      ),
+    );
+  }
 }
 
 /// Announces the things that happen without a stone appearing on the board.

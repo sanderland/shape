@@ -108,6 +108,16 @@ void main() {
     final headline = tester.widget<Text>(find.text('D4 · Lost 3.2 points'));
     expect(headline.style?.color, verdictColor(f.verdict));
   });
+
+  testWidgets('the low-win note reports an estimate, not a decided game',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(body: LowWinNotice(probability: 0.034)),
+    ));
+    expect(find.textContaining('Estimated win chance 3%'), findsOneWidget);
+    expect(find.textContaining('closer practice position'), findsOneWidget);
+    expect(find.textContaining('decided'), findsNothing);
+  });
 }
 
 Future<void> showNotice(

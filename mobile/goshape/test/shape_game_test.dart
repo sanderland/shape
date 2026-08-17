@@ -169,6 +169,29 @@ void main() {
     expect(fake.calls, callsBefore, reason: 'its analyses were already there');
   });
 
+  test('back and forward preserve the selected variation', () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake);
+    await g.start();
+    await g.playAt(2, 2);
+    final first = g.current;
+
+    await g.goFirst();
+    await g.playAt(8, 8);
+    final variation = g.current;
+    expect(identical(first, variation), isFalse);
+
+    await g.goPrev();
+    expect(identical(g.describedMove, variation), isTrue,
+        reason: 'the card should keep describing the branch just left');
+    expect(g.nextMoves.singleWhere((m) => m.x == 8 && m.y == 8).isMainLine,
+        isTrue,
+        reason: 'the board should mark the branch Forward will follow');
+
+    await g.goNext();
+    expect(identical(g.current, variation), isTrue);
+  });
+
   test('replaying an explored move lets the opponent follow its known reply',
       () async {
     final fake = FakeAnalyzer();
@@ -588,8 +611,8 @@ void main() {
     await g.goFirst();
     final shown = g.nextMoves;
     expect(shown.map((n) => (n.x, n.y)), [(2, 2), (8, 8)]);
-    expect(shown.map((n) => n.isMainLine), [true, false],
-        reason: 'only the first child is the line navigation follows');
+    expect(shown.map((n) => n.isMainLine), [false, true],
+        reason: 'navigation follows the variation selected most recently');
   });
 
   test('a pass is not drawn on the board as a continuation', () async {
@@ -676,30 +699,51 @@ void main() {
     expect(g.msPerEval, g.analysisMs ~/ g.analysisEvals);
   });
 
-  test('being far behind is measured from your side of the board', () async {
-    // scoreLeadForBlack is points for Black; playing White, the same number means
-    // the opposite thing, and getting that backwards would congratulate you on a
-    // lost game.
+  test('a low win estimate must persist and clears with hysteresis', () async {
     final fake = FakeAnalyzer();
     final g = newGame(fake);
-    fake.overrideFor = (profile, pos) => ProfileAnalysis(flatHalf(pos), 20.0);
-    g.humanColor = Board.black;
+    fake.overrideFor = (profile, pos) => ProfileAnalysis(
+          flatHalf(pos),
+          0,
+          sideToMoveWinProb: switch (pos.moves.length) {
+            2 => 0.04,
+            4 => 0.03,
+            6 => 0.08,
+            8 => 0.11,
+            _ => 0.5,
+          },
+        );
     await g.start();
+    expect(g.lowWinProbability, isNull);
 
-    // lead is from the side to move's view, and Black is to move, so +20 for Black.
-    expect(g.scoreLeadForBlack, 20.0);
-    expect(g.pointsBehind, -20.0, reason: 'you are ahead, not behind');
-    expect(g.isFarBehind, isFalse);
+    for (final p in const [(0, 0), (1, 1)]) {
+      await g.playAt(p.$1, p.$2);
+    }
+    expect(g.lowWinProbability, isNull,
+        reason: 'one low estimate is not enough');
 
-    g.humanColor = Board.white;
-    expect(g.pointsBehind, 20.0);
-    expect(g.isFarBehind, isTrue, reason: 'past the 15 point default');
+    for (final p in const [(2, 2), (3, 3)]) {
+      await g.playAt(p.$1, p.$2);
+    }
+    expect(g.lowWinProbability, 0.03,
+        reason: 'two consecutive human turns below 5% show the note');
 
-    g.behindPoints = 25;
-    expect(g.isFarBehind, isFalse, reason: 'the bar is settable');
-    g.behindPoints = 15;
-    g.warnWhenBehind = false;
-    expect(g.isFarBehind, isFalse, reason: 'and switchable');
+    g.setShowLowWinNote(false);
+    expect(g.lowWinProbability, isNull);
+    g.setShowLowWinNote(true);
+    expect(g.lowWinProbability, 0.03);
+
+    for (final p in const [(4, 4), (5, 5)]) {
+      await g.playAt(p.$1, p.$2);
+    }
+    expect(g.lowWinProbability, 0.08,
+        reason: 'it stays visible below the 10% clear threshold');
+
+    for (final p in const [(6, 6), (7, 7)]) {
+      await g.playAt(p.$1, p.$2);
+    }
+    expect(g.lowWinProbability, isNull,
+        reason: '10% hysteresis stops the note flickering around 5%');
   });
 
   test('every offered profile is one the encoder accepts', () {
@@ -710,6 +754,27 @@ void main() {
     }
     expect(kRanks, contains('proyear_2015'));
     expect(kRanks, contains('proyear_1850'));
+  });
+
+  test('the decided-game threshold is settable, hysteresis and all', () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake);
+    // A win estimate of 8%: under a 10% bar, over the 5% default.
+    fake.overrideFor = (profile, pos) =>
+        ProfileAnalysis(flatHalf(pos), 0.0, sideToMoveWinProb: 0.08);
+    await g.start();
+    // Two moves, so it is Black's turn again: the note is about your position.
+    await g.playAt(2, 2);
+    await g.playAt(4, 4);
+
+    expect(g.lowWinProbability, isNull, reason: '8% is above the 5% default');
+
+    g.setLowWinThreshold(0.10);
+    expect(g.lowWinProbability, closeTo(0.08, 1e-9),
+        reason: 'two of your turns at or below the bar');
+
+    g.setShowLowWinNote(false);
+    expect(g.lowWinProbability, isNull, reason: 'and it can be switched off');
   });
 
   test('review is unavailable before you have moved', () async {

@@ -30,10 +30,10 @@ const List<String> kRanks = [
 /// Default for [ShapeGame.mistakePoints]: desktop SHAPE's should_halt_on_mistake.
 const double kDefaultMistakePoints = kMistakeSizePoints;
 
-/// Default for [ShapeGame.behindPoints]. Far enough that the result is not in
-/// doubt at any amateur level, so the remaining shapes are being played out in a
-/// game already decided.
-const double kDefaultBehindPoints = 15.0;
+/// Default for [ShapeGame.lowWinThreshold]: the note appears after two consecutive
+/// human turns at or below this, and clears at twice it, so it does not flicker
+/// around a single number.
+const double kLowWinProbability = 0.05;
 
 /// Strongest profile the net offers; used for the score estimate rather than the
 /// player's own rank, so "points lost" doesn't move when you change your rank.
@@ -196,6 +196,9 @@ class GameNode {
   final Move? move;
   final List<GameNode> children = [];
 
+  /// The branch followed most recently from this position.
+  GameNode? selectedChild;
+
   /// Cached per node, so a variation keeps its own evaluations and revisiting a
   /// position costs nothing.
   final Map<String, ProfileAnalysis> analyses = {};
@@ -225,18 +228,25 @@ class GameNode {
   /// already explored returns to it -- with its analyses -- instead of duplicating.
   GameNode childFor(Move move) {
     for (final c in children) {
-      if (c.move!.loc == move.loc && c.move!.pla == move.pla) return c;
+      if (c.move!.loc == move.loc && c.move!.pla == move.pla) {
+        selectedChild = c;
+        return c;
+      }
     }
     final child = GameNode(parent: this, move: move);
     children.add(child);
+    selectedChild = child;
     return child;
   }
 
-  /// Following the first child at each step, which is the main line.
+  /// The branch navigation follows from here.
+  GameNode get continuation => selectedChild ?? children.first;
+
+  /// Follow the selected branch at each step.
   GameNode get endOfMainLine {
     var n = this;
     while (n.children.isNotEmpty) {
-      n = n.children.first;
+      n = n.continuation;
     }
     return n;
   }
@@ -285,7 +295,7 @@ class ShapeGame extends ChangeNotifier {
     }
     final out = back.reversed.toList();
     for (var n = current; n.children.isNotEmpty;) {
-      n = n.children.first;
+      n = n.continuation;
       out.add(n);
     }
     return out;
@@ -299,7 +309,7 @@ class ShapeGame extends ChangeNotifier {
               pos.board.locX(c.move!.loc),
               pos.board.locY(c.move!.loc),
               feedbackFor(c)?.verdict,
-              identical(c, current.children.first),
+              identical(c, current.continuation),
             ),
       ];
 
@@ -328,21 +338,53 @@ class ShapeGame extends ChangeNotifier {
   /// How many points a move must cost before it can be flagged.
   double mistakePoints = kDefaultMistakePoints;
 
-  /// How far behind before the card says the game is probably decided.
-  double behindPoints = kDefaultBehindPoints;
-  bool warnWhenBehind = true;
+  bool showLowWinNote = true;
 
-  /// Points *you* are behind by, or null if there is no estimate. Negative when
-  /// you are ahead.
-  double? get pointsBehind {
-    final black = scoreLeadForBlack;
-    if (black == null) return null;
-    return humanColor == Board.black ? -black : black;
+  /// Win estimate at or below which the game counts as decided. Cleared at twice
+  /// this, which is the hysteresis that stops the note blinking on and off.
+  double lowWinThreshold = kLowWinProbability;
+  double get _lowWinClear => lowWinThreshold * 2;
+
+  int _nextPlayerAt(GameNode node) =>
+      node.move == null ? Board.black : Board.getOpp(node.move!.pla);
+
+  /// The latest human win estimate once it has remained below 5% for two turns.
+  /// Reconstructing this from the current path keeps browsing and variations from
+  /// changing hidden counters. Once shown, it stays until the estimate reaches 10%.
+  double? get lowWinProbability {
+    if (!showLowWinNote || gameOver || _nextPlayerAt(current) != humanColor) {
+      return null;
+    }
+
+    final path = <GameNode>[];
+    for (GameNode? n = current; n != null; n = n.parent) {
+      path.add(n);
+    }
+
+    var active = false;
+    double? previous;
+    double? latest;
+    for (final node in path.reversed) {
+      if (_nextPlayerAt(node) != humanColor) continue;
+      final probability =
+          node.analyses[kReferenceProfile]?.sideToMoveWinProb;
+      if (probability == null) {
+        active = false;
+        previous = null;
+        continue;
+      }
+      latest = probability;
+      if (active) {
+        if (probability >= _lowWinClear) active = false;
+      } else if (previous != null &&
+          previous <= lowWinThreshold &&
+          probability <= lowWinThreshold) {
+        active = true;
+      }
+      previous = probability;
+    }
+    return active ? latest : null;
   }
-
-  /// Whether the card should say the game looks decided.
-  bool get isFarBehind =>
-      warnWhenBehind && (pointsBehind ?? 0) > behindPoints;
 
   /// Sampler settings, matching SHAPE's defaults.
   int topK = 50;
@@ -510,7 +552,8 @@ class ShapeGame extends ChangeNotifier {
   /// screen. At the tip nothing follows yet, so it falls back, which is what keeps
   /// the card filled during your turn.
   GameNode? get describedMove {
-    for (final c in current.children) {
+    if (current.children.isNotEmpty) {
+      final c = current.continuation;
       if (c.move!.pla == humanColor && !c.move!.isPass) return c;
     }
     return lastOwnMove;
@@ -660,7 +703,7 @@ class ShapeGame extends ChangeNotifier {
 
     // Follow a reply already in the tree instead of sampling another variation.
     if (!atTip) {
-      await _goToNode(current.children.first);
+      await _goToNode(current.continuation);
       return;
     }
 
@@ -698,6 +741,13 @@ class ShapeGame extends ChangeNotifier {
   Future<void> _goToNode(GameNode target, {bool keepReview = false}) async {
     if (busy) return;
     if (!keepReview) _reviewReturn = null;
+    // Remember the branch being left, so Back followed by Forward returns to it
+    // and the feedback card keeps describing the same continuation.
+    for (var n = current;
+        n.parent != null && n.depth > target.depth;
+        n = n.parent!) {
+      n.parent!.selectedChild = n;
+    }
     busy = true;
     notifyListeners();
     try {
@@ -767,7 +817,7 @@ class ShapeGame extends ChangeNotifier {
   GameNode _down(GameNode from, int steps) {
     var n = from;
     for (var i = 0; i < steps && n.children.isNotEmpty; i++) {
-      n = n.children.first;
+      n = n.continuation;
     }
     return n;
   }
@@ -803,14 +853,21 @@ class ShapeGame extends ChangeNotifier {
     await _drainQueuedRefresh();
   }
 
-  /// Redraw after a setting that changes only how existing analyses are read --
-  /// the mistake bar and the decided-game note need no new evaluation.
-  void notify() => notifyListeners();
-
-  /// Rebuild the card against the current thresholds, without re-analysing.
-  void refreshFeedback() {
+  /// Rebuild the card against the new threshold, without re-analysing.
+  void setMistakePoints(double value) {
+    mistakePoints = value;
     final node = describedMove;
     feedback = node == null ? null : feedbackFor(node);
+    notifyListeners();
+  }
+
+  void setShowLowWinNote(bool value) {
+    showLowWinNote = value;
+    notifyListeners();
+  }
+
+  void setLowWinThreshold(double value) {
+    lowWinThreshold = value;
     notifyListeners();
   }
 

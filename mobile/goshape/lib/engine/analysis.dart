@@ -106,8 +106,12 @@ class PolicyData {
 /// One profile's evaluation of one position.
 class ProfileAnalysis {
   final PolicyData policy;
-  final double lead; // score lead for the side to move, from the net's value head
-  ProfileAnalysis(this.policy, this.lead);
+  final double lead; // score lead for the side to move
+
+  /// Win probability for the side to move, excluding the no-result outcome.
+  final double? sideToMoveWinProb;
+
+  ProfileAnalysis(this.policy, this.lead, {this.sideToMoveWinProb});
 }
 
 /// What the game loop needs from an engine. Lets tests drive the whole loop --
@@ -201,9 +205,11 @@ class ShapeEngine implements Analyzer {
     for (final profile in profiles) {
       final meta = getProfile(profile).getMetadataRow(pos.nextPlayer, boardArea);
       final o = await runner.run(f.bin, f.global, meta);
+      final decisive = o.outcome[0] + o.outcome[1];
       out[profile] = ProfileAnalysis(
         PolicyData(o.policy, posLen, pos.board),
         o.lead,
+        sideToMoveWinProb: decisive > 0 ? o.outcome[0] / decisive : null,
       );
     }
     return out;
