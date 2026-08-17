@@ -527,19 +527,27 @@ void main() {
     expect(depths, orderedEquals(depths.toList()..sort()));
 
     await g.goFirst();
-    await g.goToMistake(forward: true);
     final first = mistakes.first;
-    expect(g.cursor, first.depth,
-        reason: 'the mistake must be the move just played, or the card shows another');
-    expect(g.feedback, isNotNull);
+
+    // Going back to the start already puts you on the first decision, since the
+    // move you played from there is the one being discussed.
+    expect(g.cursor, first.depth - 1,
+        reason: 'the position you faced, not the one after you played');
+    expect(g.humanToPlay, isTrue, reason: 'so the heatmap paints and you can move');
+    expect(identical(g.describedMove, first), isTrue);
+    expect(g.describedMoveIsPlayed, isFalse,
+        reason: 'it is a dot on the board, not a stone');
+    expect(g.nextMoves.map((n) => (n.x, n.y)),
+        contains((g.feedback!.x, g.feedback!.y)),
+        reason: 'the card and the dot must be the same move');
     expect(g.feedback!.isMistake, isTrue);
 
     // Forward then back returns to where it started.
     if (mistakes.length > 1) {
       await g.goToMistake(forward: true);
-      expect(g.cursor, mistakes[1].depth);
+      expect(g.cursor, mistakes[1].depth - 1);
       await g.goToMistake(forward: false);
-      expect(g.cursor, first.depth);
+      expect(g.cursor, first.depth - 1);
     }
 
     await g.goLast();

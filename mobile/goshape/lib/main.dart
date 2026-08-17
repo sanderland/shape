@@ -332,7 +332,11 @@ class _HomePageState extends State<HomePage> {
                   lastMove: lastMove,
                   // Ringed whenever the card is on screen, in the card's own
                   // colour, so "which move is this about" needs no coordinates.
-                  markedMove: showCard && fb != null ? (fb.x, fb.y) : null,
+                  // Only when it is actually on the board: a move you have not
+                  // played from here is already drawn as a dot in that colour.
+                  markedMove: showCard && fb != null && g.describedMoveIsPlayed
+                      ? (fb.x, fb.y)
+                      : null,
                   markColor:
                       fb == null ? Colors.transparent : verdictColor(fb.verdict),
                   crosshair: _crosshair,

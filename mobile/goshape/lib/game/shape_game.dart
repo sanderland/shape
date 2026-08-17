@@ -464,15 +464,30 @@ class ShapeGame extends ChangeNotifier {
     return before.lead + after.lead - offset;
   }
 
-  /// Describe the last move you played at or before the cursor.
+  /// The move the card talks about: what you played *from* here if that is known,
+  /// otherwise the last one you played to get here.
   ///
-  /// Deliberately not "the move that produced this position": the opponent replies
-  /// immediately, so by the time it is your turn again that move is theirs, and
-  /// keying off it would leave the card empty for the whole of your thinking time.
+  /// Browsing back puts you at a decision point, and the move worth discussing
+  /// there is the one you chose from it -- the same move the board marks with a
+  /// dot and the same one the heatmap is offering alternatives to. Keying off the
+  /// move behind you instead described a different decision from the one on
+  /// screen. At the tip nothing follows yet, so it falls back, which is what keeps
+  /// the card filled during your turn.
+  GameNode? get describedMove {
+    for (final c in current.children) {
+      if (c.move!.pla == humanColor && !c.move!.isPass) return c;
+    }
+    return lastOwnMove;
+  }
+
+  /// Whether the described move is already on the board, rather than a
+  /// continuation drawn as a dot.
+  bool get describedMoveIsPlayed => (describedMove?.depth ?? 0) <= cursor;
+
   Future<void> _updateFeedback() async {
     feedback = null;
     if (!wantsFeedback || !hasEngine) return;
-    final node = lastOwnMove;
+    final node = describedMove;
     if (node == null) return;
 
     // Usually both are cached from when the move was played; this only does work if
@@ -526,26 +541,43 @@ class ShapeGame extends ChangeNotifier {
   List<GameNode> get knownMistakes =>
       [for (final n in currentLine) if (feedbackFor(n)?.isMistake ?? false) n];
 
+  /// Where [goToMistake] would put the cursor for [mistake].
+  int _landingFor(GameNode mistake) => mistake.depth - 1;
+
+  /// Stepping is relative to the mistake you are looking at rather than to the
+  /// cursor, because they are one apart: standing on a mistake's decision point,
+  /// a cursor comparison cannot tell "this one" from "the one after".
   GameNode? get nextMistake {
-    for (final n in knownMistakes) {
-      if (n.depth > cursor) return n;
+    final all = knownMistakes;
+    final here = all.indexWhere((n) => identical(n, describedMove));
+    if (here >= 0) return here + 1 < all.length ? all[here + 1] : null;
+    for (final n in all) {
+      if (_landingFor(n) >= cursor) return n;
     }
     return null;
   }
 
   GameNode? get previousMistake {
+    final all = knownMistakes;
+    final here = all.indexWhere((n) => identical(n, describedMove));
+    if (here >= 0) return here > 0 ? all[here - 1] : null;
     GameNode? found;
-    for (final n in knownMistakes) {
-      if (n.depth < cursor) found = n;
+    for (final n in all) {
+      if (_landingFor(n) < cursor) found = n;
     }
     return found;
   }
 
-  /// Jump so the mistake is the move just played, which is what the card describes.
+  /// Land on the position you faced before the mistake, not after it.
+  ///
+  /// That is where you can actually do something: it is your turn, the heatmap
+  /// paints, the mistake shows as a coloured dot among your other options, and the
+  /// card describes it. Landing after put the mistake on the board with the
+  /// opponent to move and nothing to compare it against.
   Future<void> goToMistake({required bool forward}) async {
     final node = forward ? nextMistake : previousMistake;
     if (node == null) return;
-    await _goToNode(node);
+    await _goToNode(node.parent!);
   }
 
   Future<void> playAt(int x, int y) async {
