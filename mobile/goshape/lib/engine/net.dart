@@ -1,4 +1,5 @@
-// Running the human-SL net on device, through MNN.
+// The bridge to the host app: running the human-SL net through MNN, and the few
+// other things only the platform can answer.
 //
 // MNN rather than ONNX Runtime because it is twice as fast on the same model and
 // the same output: 104 ms/eval against 217 on a Galaxy S24+. Its GPU backends were
@@ -11,6 +12,18 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart';
 
 const String kMnnAsset = 'assets/humanv0.mnn';
+
+const MethodChannel _host = MethodChannel('shape/host');
+
+/// Version name and code of the installed package, for the diagnostics block.
+/// Read from the platform rather than a constant, which would drift from pubspec.
+Future<String?> hostVersion() async {
+  try {
+    return await _host.invokeMethod<String>('version');
+  } catch (_) {
+    return null;
+  }
+}
 
 /// One evaluation of the net.
 class NetOutputs {
@@ -54,7 +67,7 @@ class EngineTrial {
 }
 
 class MnnRunner implements NetRunner {
-  static const MethodChannel _channel = MethodChannel('shape/mnn');
+  static const MethodChannel _channel = _host;
 
   @override
   String get label => 'MNN CPU';

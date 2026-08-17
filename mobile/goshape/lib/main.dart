@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'board_painter.dart';
 import 'feedback_card.dart';
 import 'engine/analysis.dart';
+import 'engine/net.dart';
 import 'game/shape_game.dart';
 
 
@@ -45,6 +46,9 @@ class _HomePageState extends State<HomePage> {
   /// Intersection currently under the finger, if any.
   (int, int)? _crosshair;
 
+  /// Version name and code, once the platform has answered.
+  String? _version;
+
   @override
   void initState() {
     super.initState();
@@ -54,6 +58,9 @@ class _HomePageState extends State<HomePage> {
   /// The board is worth having even when the engine is not available, so a failure
   /// to load one degrades the app rather than replacing it with an error screen.
   Future<void> _load() async {
+    hostVersion().then((v) {
+      if (mounted) setState(() => _version = v);
+    });
     ShapeEngine? engine;
     String? engineError;
     try {
@@ -132,7 +139,8 @@ class _HomePageState extends State<HomePage> {
     final navEnabled = !g.busy;
     return Scaffold(
       appBar: AppBar(
-        title: _menu(g),
+        leading: _menu(g),
+        titleSpacing: 0,
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           // Double chevrons in the mistake colour: the shape says jump, the colour
@@ -258,25 +266,45 @@ class _HomePageState extends State<HomePage> {
           const PopupMenuDivider(),
           PopupMenuItem(
             enabled: false,
-            child: DefaultTextStyle(
-              style: const TextStyle(
-                  fontFamily: 'monospace', fontSize: 11, color: Colors.black54),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${g.boardSize}x${g.boardSize}   move ${g.cursor}/${g.line.length}'
-                    '   ${g.knownMistakes.length} mistakes'),
-                Text('score ${GameNotice.scoreLabel(g.scoreLeadForBlack) ?? "--"}'
-                    '   (${rankLabel(kReferenceProfile)}, no search)'),
-                Text(g.hasEngine
-                    ? '${g.engine!.provider}   ${g.msPerEval} ms/eval'
-                        '   x${g.analysisEvals} = ${g.analysisMs} ms'
-                    : 'no engine'),
-              ]),
-            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('SHAPE${_version == null ? "" : "  $_version"}',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 12, color: Colors.black87)),
+              const SizedBox(height: 6),
+              _stat('Board', '${g.boardSize}×${g.boardSize}'),
+              _stat('Move', '${g.cursor} of ${g.currentLine.length}'),
+              _stat('Mistakes', '${g.knownMistakes.length}'),
+              _stat(
+                  'Score',
+                  g.scoreLeadForBlack == null
+                      ? '—'
+                      : '${GameNotice.scoreLabel(g.scoreLeadForBlack)}'
+                          '  (${rankLabel(kReferenceProfile)}, no search)'),
+              _stat('Engine', g.hasEngine ? g.engine!.provider : 'none'),
+              if (g.hasEngine)
+                _stat('Speed',
+                    '${g.msPerEval} ms/eval   ×${g.analysisEvals} = ${g.analysisMs} ms'),
+            ]),
           ),
         ],
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text('SHAPE', style: Theme.of(context).textTheme.titleLarge),
-          const Icon(Icons.arrow_drop_down),
+        icon: const Icon(Icons.menu),
+      );
+
+  /// One labelled row of the diagnostics block, so the numbers line up instead of
+  /// running together.
+  Widget _stat(String label, String value) => Padding(
+        padding: const EdgeInsets.only(bottom: 2),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          SizedBox(
+            width: 68,
+            child: Text(label,
+                style: const TextStyle(fontSize: 11, color: Colors.black45)),
+          ),
+          Expanded(
+            child: Text(value,
+                style: const TextStyle(
+                    fontFamily: 'monospace', fontSize: 11, color: Colors.black87)),
+          ),
         ]),
       );
 

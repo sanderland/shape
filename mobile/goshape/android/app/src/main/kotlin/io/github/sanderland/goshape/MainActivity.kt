@@ -21,7 +21,7 @@ class MainActivity : FlutterActivity() {
     private val outputs = HashMap<String, Long>()
 
     private companion object {
-        const val CHANNEL = "shape/mnn"
+        const val CHANNEL = "shape/host"
 
         /** MNNForwardType MNN_FORWARD_CPU. The GPU backends were measured and are
          *  not worth having: OpenCL matched the CPU to within a millisecond and
@@ -39,6 +39,7 @@ class MainActivity : FlutterActivity() {
                 try {
                     when (call.method) {
                         "cacheDir" -> result.success(cacheDir.absolutePath)
+                        "version" -> result.success(appVersion())
                         "load" -> {
                             load(call.argument<String>("path")!!)
                             result.success(null)
@@ -61,6 +62,12 @@ class MainActivity : FlutterActivity() {
                     result.error("mnn", "${e.javaClass.simpleName}: ${e.message ?: e}", null)
                 }
             }
+    }
+
+    /** Version name and code, straight from the installed package. */
+    private fun appVersion(): String {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        return "${info.versionName} (${info.longVersionCode})"
     }
 
     /**
