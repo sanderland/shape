@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'board_painter.dart';
 import 'feedback_card.dart';
 import 'engine/analysis.dart';
+import 'engine/board.dart';
 import 'engine/net.dart';
 import 'game/shape_game.dart';
 
@@ -456,28 +457,66 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// Asks for a board size first, defaulting to the one already in play.
+  /// Board size and which stones you take, both defaulting to the current game.
   Future<void> _newGame(ShapeGame g) async {
-    final size = await showDialog<int>(
+    var size = g.boardSize;
+    var color = g.humanColor;
+
+    final start = await showDialog<bool>(
       context: context,
-      builder: (ctx) => SimpleDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('New game'),
-        children: [
-          for (final s in kBoardSizes)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, s),
-              child: Row(children: [
-                Icon(s == g.boardSize ? Icons.check : Icons.grid_on,
-                    size: 18,
-                    color: s == g.boardSize ? const Color(0xFF0B6E2E) : Colors.black38),
-                const SizedBox(width: 10),
-                Text('$s × $s'),
-              ]),
-            ),
+        content: StatefulBuilder(
+          builder: (context, setDialogState) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Board',
+                  style: TextStyle(fontSize: 12, color: Colors.black54)),
+              const SizedBox(height: 6),
+              SegmentedButton<int>(
+                showSelectedIcon: false,
+                segments: [
+                  for (final s in kBoardSizes)
+                    ButtonSegment(value: s, label: Text('$s×$s')),
+                ],
+                selected: {size},
+                onSelectionChanged: (v) => setDialogState(() => size = v.first),
+              ),
+              const SizedBox(height: 14),
+              const Text('You play',
+                  style: TextStyle(fontSize: 12, color: Colors.black54)),
+              const SizedBox(height: 6),
+              SegmentedButton<int>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: Board.black, label: Text('Black')),
+                  ButtonSegment(value: Board.white, label: Text('White')),
+                ],
+                selected: {color},
+                onSelectionChanged: (v) => setDialogState(() => color = v.first),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                color == Board.black
+                    ? 'You open.'
+                    : '${rankLabel(g.opponentRank)} opens.',
+                style: const TextStyle(fontSize: 11, color: Colors.black45),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true), child: const Text('Start')),
         ],
       ),
     );
-    if (size != null) await g.newGame(size: size);
+
+    if (start == true) await g.newGame(size: size, asColor: color);
   }
 
   /// Mistakes-only hides the card unless the move was actually flagged.

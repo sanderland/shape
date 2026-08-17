@@ -777,6 +777,36 @@ void main() {
     expect(g.lowWinProbability, isNull, reason: 'and it can be switched off');
   });
 
+  test('taking White has the opponent open', () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake, autoplay: true);
+    await g.start();
+    expect(g.cursor, 0, reason: 'as Black you open, so nothing has happened yet');
+
+    await g.newGame(asColor: Board.white);
+
+    expect(g.humanColor, Board.white);
+    expect(g.cursor, 1, reason: 'the opponent played first');
+    expect(g.line.single.pla, Board.black);
+    expect(g.humanToPlay, isTrue, reason: 'and it is your turn now');
+
+    // Your move goes down as White, and feedback describes it as yours.
+    g.feedbackMode = FeedbackMode.all;
+    await g.playAt(4, 4);
+    final yours = g.line[1];
+    expect(yours.pla, Board.white);
+    expect(g.toSgf(), contains('PW[5k]'), reason: 'you are the White player now');
+  });
+
+  test('a new game keeps the colour you last chose', () async {
+    final fake = FakeAnalyzer();
+    final g = newGame(fake, autoplay: true);
+    await g.newGame(asColor: Board.white);
+    await g.newGame(size: 9);
+    expect(g.humanColor, Board.white, reason: 'size alone must not reset it');
+    expect(g.boardSize, 9);
+  });
+
   test('review is unavailable before you have moved', () async {
     final fake = FakeAnalyzer();
     final g = newGame(fake, autoplay: true);

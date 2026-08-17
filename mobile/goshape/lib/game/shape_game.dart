@@ -830,7 +830,8 @@ class ShapeGame extends ChangeNotifier {
   Future<void> goPrev() => _goToNode(_up(current, _navigationStep));
   Future<void> goNext() => _goToNode(_down(current, _navigationStep));
 
-  Future<void> newGame({int? size}) async {
+  /// [asColor] is which stones you take; the opponent opens when you take White.
+  Future<void> newGame({int? size, int? asColor}) async {
     if (busy) return;
     busy = true;
     notifyListeners();
@@ -841,6 +842,7 @@ class ShapeGame extends ChangeNotifier {
       feedback = null;
       error = null;
       boardSize = size ?? boardSize;
+      humanColor = asColor ?? humanColor;
       pos = GoPosition(boardSize, Rules.japanese);
       await _analyzeCurrent(autoReply: _autoReplyWouldFire);
     } catch (e) {
