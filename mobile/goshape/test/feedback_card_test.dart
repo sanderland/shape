@@ -112,9 +112,9 @@ void main() {
   testWidgets('the low-win note reports an estimate, not a decided game',
       (tester) async {
     await tester.pumpWidget(const MaterialApp(
-      home: Scaffold(body: LowWinNotice(probability: 0.034)),
+      home: Scaffold(body: LowWinNotice(probability: 0.034, rank: 'rank_5k')),
     ));
-    expect(find.textContaining('Estimated win chance 3%'), findsOneWidget);
+    expect(find.textContaining('3% win chance at 5k'), findsOneWidget);
     expect(find.textContaining('closer practice position'), findsOneWidget);
     expect(find.textContaining('decided'), findsNothing);
   });

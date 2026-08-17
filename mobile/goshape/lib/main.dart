@@ -256,7 +256,7 @@ class _HomePageState extends State<HomePage> {
               dense: true,
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.tune),
-              title: const Text('Ranks'),
+              title: const Text('Settings'),
               subtitle: Text('${rankLabel(g.playerRank)} · ${rankLabel(g.targetRank)} '
                   '· ${rankLabel(g.opponentRank)}'),
             ),
@@ -404,7 +404,7 @@ class _HomePageState extends State<HomePage> {
             scoreLeadForBlack: g.scoreLeadForBlack,
           ),
           if (g.lowWinProbability case final probability?)
-            LowWinNotice(probability: probability),
+            LowWinNotice(probability: probability, rank: g.playerRank),
           if (_showCard(g)) ...[
             FeedbackCard(
               feedback: g.feedback,
@@ -576,9 +576,9 @@ class _HomePageState extends State<HomePage> {
                   title: const Text('Low win-chance note',
                       style: TextStyle(fontSize: 12)),
                   subtitle: Text(
-                      'After two of your turns at or below '
-                      '${(g.lowWinThreshold * 100).toStringAsFixed(0)}%, '
-                      'clearing at ${(g.lowWinThreshold * 200).toStringAsFixed(0)}%',
+                      'Estimated at ${rankLabel(g.playerRank)}, after two of your '
+                      'turns at or below '
+                      '${(g.lowWinThreshold * 100).toStringAsFixed(0)}%',
                       style: const TextStyle(fontSize: 11)),
                   value: g.showLowWinNote,
                   onChanged: (v) {

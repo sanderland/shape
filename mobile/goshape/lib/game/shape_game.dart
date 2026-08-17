@@ -348,9 +348,17 @@ class ShapeGame extends ChangeNotifier {
   int _nextPlayerAt(GameNode node) =>
       node.move == null ? Board.black : Board.getOpp(node.move!.pla);
 
-  /// The latest human win estimate once it has remained below 5% for two turns.
+  /// The latest win estimate for you, once it has stayed at or below the bar for
+  /// two of your turns.
+  ///
+  /// Read at *your* rank, not the reference profile. A pro would have resigned
+  /// long before a 5 point deficit in the early endgame is decided between 5k
+  /// players, so asking the strongest profile whether the game is over answers a
+  /// question nobody asked. The net conditions its value head on rank, so this is
+  /// "how often does someone of my strength win from here".
+  ///
   /// Reconstructing this from the current path keeps browsing and variations from
-  /// changing hidden counters. Once shown, it stays until the estimate reaches 10%.
+  /// changing hidden counters. Once shown, it stays until twice the bar.
   double? get lowWinProbability {
     if (!showLowWinNote || gameOver || _nextPlayerAt(current) != humanColor) {
       return null;
@@ -366,8 +374,7 @@ class ShapeGame extends ChangeNotifier {
     double? latest;
     for (final node in path.reversed) {
       if (_nextPlayerAt(node) != humanColor) continue;
-      final probability =
-          node.analyses[kReferenceProfile]?.sideToMoveWinProb;
+      final probability = node.analyses[playerRank]?.sideToMoveWinProb;
       if (probability == null) {
         active = false;
         previous = null;
@@ -443,6 +450,9 @@ class ShapeGame extends ChangeNotifier {
     // never optional.
     needed.add(kReferenceProfile);
     if (wantsFeedback) needed.addAll([playerRank, targetRank]);
+    // The win estimate is read at your rank, which feedback already evaluates;
+    // this only costs an extra call when the note is on and feedback is off.
+    if (showLowWinNote) needed.add(playerRank);
     final hm = heatmapProfile;
     if (hm != null) needed.add(hm);
     return needed.toList();

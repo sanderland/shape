@@ -288,16 +288,23 @@ void main() {
     final fake = FakeAnalyzer();
     final g = newGame(fake, autoplay: true);
 
-    // Everything off: only the profile behind the score estimate, which is always
-    // shown and so is never optional.
+    // Everything off: the score's profile, which is never optional, plus your own
+    // rank for the win estimate -- feedback would have evaluated that anyway, so
+    // this is the one configuration where the note costs a call of its own.
     await g.setFeedbackMode(FeedbackMode.off);
     await g.setHeatmapMode(HeatmapMode.off);
-    expect(g.activeProfiles, [kReferenceProfile]);
+    expect(g.activeProfiles.toSet(), {kReferenceProfile, g.playerRank});
     expect(g.feedback, isNull);
+
+    g.setShowLowWinNote(false);
+    expect(g.activeProfiles, [kReferenceProfile],
+        reason: 'and it goes away with the note');
+    g.setShowLowWinNote(true);
 
     // Heatmap alone pulls in exactly the painted profile, not the feedback set.
     await g.setHeatmapMode(HeatmapMode.target);
-    expect(g.activeProfiles.toSet(), {kReferenceProfile, g.targetRank});
+    expect(g.activeProfiles.toSet(),
+        {kReferenceProfile, g.playerRank, g.targetRank});
 
     await g.setHeatmapMode(HeatmapMode.yourRank);
     expect(g.activeProfiles.toSet(), {kReferenceProfile, g.playerRank});
@@ -759,15 +766,21 @@ void main() {
   test('the decided-game threshold is settable, hysteresis and all', () async {
     final fake = FakeAnalyzer();
     final g = newGame(fake);
-    // A win estimate of 8%: under a 10% bar, over the 5% default.
-    fake.overrideFor = (profile, pos) =>
-        ProfileAnalysis(flatHalf(pos), 0.0, sideToMoveWinProb: 0.08);
+    // 8% at your own rank, but a hopeless 1% to the reference profile. Reading the
+    // wrong one is exactly the mistake this replaced: a pro giving up on a game a
+    // 5k can still win.
+    fake.overrideFor = (profile, pos) => ProfileAnalysis(
+          flatHalf(pos),
+          0.0,
+          sideToMoveWinProb: profile == kReferenceProfile ? 0.01 : 0.08,
+        );
     await g.start();
     // Two moves, so it is Black's turn again: the note is about your position.
     await g.playAt(2, 2);
     await g.playAt(4, 4);
 
-    expect(g.lowWinProbability, isNull, reason: '8% is above the 5% default');
+    expect(g.lowWinProbability, isNull,
+        reason: '8% at your rank is above the 5% default, whatever a pro thinks');
 
     g.setLowWinThreshold(0.10);
     expect(g.lowWinProbability, closeTo(0.08, 1e-9),

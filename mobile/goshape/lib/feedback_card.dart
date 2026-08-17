@@ -140,7 +140,10 @@ class FeedbackCard extends StatelessWidget {
 class LowWinNotice extends StatelessWidget {
   final double probability;
 
-  const LowWinNotice({super.key, required this.probability});
+  /// Whose estimate it is, since "4%" means nothing without it.
+  final String rank;
+
+  const LowWinNotice({super.key, required this.probability, required this.rank});
 
   @override
   Widget build(BuildContext context) {
@@ -149,7 +152,7 @@ class LowWinNotice extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Text(
-        'Estimated win chance ${percent.toStringAsFixed(digits)}%. '
+        '${percent.toStringAsFixed(digits)}% win chance at ${rankLabel(rank)}. '
         'Start a new game if you want a closer practice position.',
         style: const TextStyle(
             fontSize: 12,
