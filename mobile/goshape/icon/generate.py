@@ -1,5 +1,6 @@
 """Generates the launcher icon: a board, a local shape, and the move that completes it.
 Run with any Python that has Pillow, then `dart run flutter_launcher_icons`."""
+
 from PIL import Image, ImageDraw
 
 S = 1024
