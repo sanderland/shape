@@ -61,7 +61,7 @@ The tests do not require an emulator or model. The main coverage is:
 ## Build
 
 CI exports and converts the model, downloads the MNN Android libraries, runs the
-tests, and builds a sideload-signed arm64 APK. The workflow attaches the APK to
+tests, and builds a release-signed arm64 APK. The workflow attaches the APK to
 the pull request.
 
 For a local build, provide `assets/humanv0.mnn` and the required arm64 MNN shared
@@ -70,6 +70,40 @@ libraries under `android/app/src/main/jniLibs/arm64-v8a/`, then run:
 ```sh
 flutter build apk --release --split-per-abi --target-platform=android-arm64
 ```
+
+Release builds require `android/key.properties` with these values:
+
+```properties
+storeFile=/absolute/path/to/shape-release.p12
+storePassword=your-store-password
+keyAlias=shape
+keyPassword=your-key-password
+```
+
+Generate the key from a private directory. `keytool` prompts for the password and
+certificate details, so neither ends up in shell history:
+
+```sh
+keytool -genkeypair -v -storetype PKCS12 -keystore shape-release.p12 \
+  -alias shape -keyalg RSA -keysize 4096 -validity 10000
+```
+
+The properties file and common keystore extensions are ignored by Git. Generate
+the key once and keep a separate backup. Losing it means future APKs cannot
+update the installed app. An existing build signed by the old public sideload
+key must be uninstalled once before installing a build signed by the private
+release key.
+
+CI reads the same material from four GitHub Actions secrets:
+
+- `ANDROID_RELEASE_KEYSTORE_BASE64`
+- `ANDROID_RELEASE_STORE_PASSWORD`
+- `ANDROID_RELEASE_KEY_ALIAS`
+- `ANDROID_RELEASE_KEY_PASSWORD`
+
+Create the first value with `base64 < shape-release.p12 | gh secret set
+ANDROID_RELEASE_KEYSTORE_BASE64`. Running `gh secret set NAME` without a value
+prompts for each password without putting it in shell history.
 
 The exact export, conversion, and native-library steps are in
 `.github/workflows/mobile_apk.yml`. `tools/mnn/mnn_parity.py` checks the converted
@@ -94,7 +128,7 @@ python export_fixtures.py
 
 - The score and points-lost estimates come from the human-SL model's lead head at
   the professional profile, without search. They are useful approximations, not
-  the same values as desktop SHAPE's searched KataGo analysis.
+  searched KataGo analysis.
 - Only Japanese territory scoring is supported. Area scoring needs KataGo's
   pass-alive calculation, which is not ported.
 - The board implements simple ko, not superko, matching the Python reference used

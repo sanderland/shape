@@ -1,11 +1,6 @@
-// SHAPE's game loop, ported: play a move, get rank-relative feedback, let a
-// human-like opponent reply by sampling from the human-SL policy at its rank.
-//
-// Deviation from desktop SHAPE, stated plainly: desktop uses a separate KataGo net
-// with search for `scoreLead`, and its "AI" heatmap is that net's raw policy. Only
-// the human-SL net ships here, so the score axis uses the human net's lead head at
-// the strongest available profile. That approximates desktop's mistake size rather
-// than reproducing it.
+// Play a move, get rank-relative feedback, then sample the opponent's reply from
+// the human-SL policy at its rank. The score estimate comes from that model's lead
+// head at its strongest profile. It does not use KataGo search.
 
 import 'dart:math' as math;
 
@@ -27,7 +22,7 @@ const List<String> kRanks = [
   'proyear_1980', 'proyear_2015', 'proyear_2023',
 ];
 
-/// Default for [ShapeGame.mistakePoints]: desktop SHAPE's should_halt_on_mistake.
+/// Default points-loss threshold for [ShapeGame.mistakePoints].
 const double kDefaultMistakePoints = kMistakeSizePoints;
 
 /// Default for [ShapeGame.lowWinThreshold]: the note appears after two consecutive
@@ -39,7 +34,7 @@ const double kLowWinProbability = 0.05;
 /// player's own rank, so "points lost" doesn't move when you change your rank.
 const String kReferenceProfile = 'proyear_2023';
 
-/// Desktop SHAPE's thresholds (shape/ui/tab_config.py: should_halt_on_mistake).
+/// Thresholds used by the move verdict classifier.
 const double kMistakeSizePoints = 1.0;
 const double kTargetRankThreshold = 0.20;
 const double kMaxProbThreshold = 0.01;
@@ -155,11 +150,10 @@ class MoveFeedback {
   /// anything. See [kTargetPlaysItThreshold].
   bool get targetPlaysItToo => targetProb >= kTargetPlaysItThreshold;
 
-  /// Desktop's rule: a big loss only counts as a mistake worth flagging if the move
-  /// is either unlike your target rank or one almost nobody plays. A costly move the
-  /// target rank would happily play is a level-appropriate move, not a blunder --
-  /// but it is still costly, and [MoveVerdict.costly] says so rather than filing it
-  /// under "typical" with the price in a footnote.
+  /// A big loss counts as a mistake worth flagging only if the move is unlike your
+  /// target rank or one almost nobody plays. A costly move the target rank would
+  /// happily play is level-appropriate, but [MoveVerdict.costly] still reports the
+  /// loss rather than hiding it under "typical".
   MoveVerdict get verdict {
     if (costly) {
       return (isRare || moveLikeTarget < kTargetRankThreshold)
@@ -174,8 +168,8 @@ class MoveFeedback {
     return MoveVerdict.typical;
   }
 
-  /// Only [MoveVerdict.mistake] halts, matching desktop: a costly move the target
-  /// rank plays is deliberately not flagged.
+  /// Only [MoveVerdict.mistake] halts. A costly move the target rank plays is not
+  /// flagged.
   bool get isMistake => verdict == MoveVerdict.mistake;
 }
 

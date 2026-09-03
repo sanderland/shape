@@ -1,5 +1,4 @@
-// Pins the move-labelling rule against desktop SHAPE's should_halt_on_mistake
-// (shape/ui/tab_config.py): a big loss is only flagged when the move is either
+// Pins the move-labelling rule: a big loss is only flagged when the move is
 // unlike your target rank or one almost nobody plays. A costly move your target
 // rank would also play is level-appropriate, not a blunder.
 
@@ -48,7 +47,7 @@ void main() {
     // numbers know.
     final f = fb(playerProb: 0.10, targetProb: 0.30, pointsLost: 2.3);
     expect(f.verdict, MoveVerdict.costly);
-    expect(f.isMistake, isFalse, reason: 'still excused, per desktop');
+    expect(f.isMistake, isFalse, reason: 'the target-rank exception still applies');
     expect(f.targetPlaysItToo, isTrue);
   });
 
@@ -155,9 +154,9 @@ void main() {
     expect(lenient.verdict, MoveVerdict.typical);
   });
 
-  test('threshold constants match desktop SHAPE defaults', () {
-    expect(kMistakeSizePoints, 1.0); // mistake_size_spinbox
-    expect(kTargetRankThreshold, 0.20); // target_rank_spinbox / 100
-    expect(kMaxProbThreshold, 0.01); // max_probability_spinbox / 100
+  test('threshold constants keep their calibrated defaults', () {
+    expect(kMistakeSizePoints, 1.0);
+    expect(kTargetRankThreshold, 0.20);
+    expect(kMaxProbThreshold, 0.01);
   });
 }

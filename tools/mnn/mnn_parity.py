@@ -1,11 +1,4 @@
-"""Does the MNN conversion of the human-SL net still produce KataGo's numbers?
-
-ONNX Runtime has no Android GPU backend, so reaching the phone's GPU means
-switching runtime. MNN is the cheapest candidate (direct ONNX converter, OpenCL
-and Vulkan backends on Android). The only real risk is whether this architecture
--- nested-bottleneck blocks with global pooling -- survives conversion, so check
-the outputs against ORT before doing any Android work.
-"""
+"""Compare the converted MNN human-SL model with its ONNX source."""
 
 import json
 import struct
@@ -74,8 +67,8 @@ def main():
     print(f"\nworst policy diff {worst:.3e}, top-1 mismatches {mismatches}/{len(ref['profiles'])}")
     print("GATE:", "PASS" if worst < 1e-3 and mismatches == 0 else "FAIL")
 
-    # Rough desktop throughput check; says nothing about mobile GPU, but confirms
-    # the runtime is actually usable rather than merely correct.
+    # Rough host throughput check. This confirms the runtime is usable, but does
+    # not predict performance on an Android device.
     meta = np.array(next(iter(ref["profiles"].values()))["meta"], dtype=np.float32).reshape(1, -1)
     args = [
         expr.const(bin_, list(bin_.shape), expr.NCHW),
@@ -97,7 +90,7 @@ def main():
         sess.run(None, feeds)
     ort_ms = (time.perf_counter() - t0) / 5 * 1000
 
-    print(f"\ndesktop CPU: MNN {mnn_ms:.0f} ms/eval, ORT {ort_ms:.0f} ms/eval")
+    print(f"\nhost CPU: MNN {mnn_ms:.0f} ms/eval, ORT {ort_ms:.0f} ms/eval")
 
 
 if __name__ == "__main__":

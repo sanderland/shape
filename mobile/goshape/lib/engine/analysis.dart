@@ -1,6 +1,4 @@
-// The on-device engine -- featurize, run the human-SL net, hand back policies --
-// and PolicyData, a port of the top_k/top_p/min_p sampler in SHAPE's game_logic.py
-// that the opponent plays from.
+// The on-device engine and the filtered policy sampler used by the opponent.
 
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -50,13 +48,13 @@ class PolicyData {
 
   bool isLegalAt(int x, int y) => _legal[y * boardSize + x] != 0;
 
-  /// prob and prob relative to the best move, as SHAPE's `PolicyData.at` returns.
+  /// Probability and probability relative to the best move.
   (double, double) at(int? x, int? y) {
     final p = (x == null || y == null) ? passProb : probAt(x, y);
     return (p, maxProb > 0 ? p / maxProb : 0.0);
   }
 
-  /// SHAPE's sampler: sort descending, cut by min_p / top_k / top_p.
+  /// Sort descending, then cut by minP, topK, and topP.
   List<PolicyMove> sample({
     int topK = 10000,
     double topP = 1e9,
@@ -89,7 +87,7 @@ class PolicyData {
     return top;
   }
 
-  /// Weighted pick, as SHAPE's opponent does with np.random.choice.
+  /// Pick one candidate in proportion to its policy probability.
   PolicyMove? pick(List<PolicyMove> candidates, math.Random rng) {
     if (candidates.isEmpty) return null;
     final total = candidates.fold<double>(0.0, (a, m) => a + m.prob);
@@ -158,8 +156,8 @@ class ShapeEngine implements Analyzer {
   /// The app runs on without an engine, so failing here costs feedback and the
   /// opponent, not the whole app.
   ///
-  /// Loading is not enough: the net must also reproduce the desktop export on
-  /// the bundled position (see reference.dart).
+  /// Loading is not enough: the net must reproduce the exported reference on the
+  /// bundled position (see reference.dart).
   static Future<ShapeEngine> load({int posLen = 19}) async {
     if (await EngineTrial.crashedBefore()) {
       throw const EngineUnavailable(
@@ -184,7 +182,7 @@ class ShapeEngine implements Analyzer {
     }
   }
 
-  /// Does this device reproduce what the desktop export produced?
+  /// Does this device reproduce the saved export reference?
   Future<ReferenceCheck> verifyAgainstReference() async {
     final ref = await ReferencePosition.load();
     final out = await runner.run(ref.bin, ref.global, ref.meta);

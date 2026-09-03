@@ -1,8 +1,8 @@
 """Emit the Flutter app's assets.
 
 - position.bin : float32 bin_input[22*19*19] then float32 global_input[19]
-- reference.json: desktop ONNX policy top-20 per profile, so the app can prove its
-  on-device output matches desktop rather than merely producing *something*.
+- reference.json: ONNX policy top-20 per profile, so the app can prove its
+  on-device output matches the exported model rather than merely producing output.
 """
 
 import json

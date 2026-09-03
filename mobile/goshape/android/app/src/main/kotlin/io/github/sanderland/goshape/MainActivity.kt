@@ -124,8 +124,8 @@ class MainActivity : FlutterActivity() {
 
         // The ONNX export has a dynamic batch axis, which the Interpreter API leaves
         // unresolved -- writing into such a tensor segfaults inside libMNN. Pin the
-        // shapes and re-plan the session before touching any data. (MNN's Module API,
-        // used by the desktop parity check, resizes on its own; this one does not.)
+        // shapes and re-plan the session before touching any data. MNN's Module API,
+        // used by the parity tool, resizes on its own; this one does not.
         MNNNetNative.nativeReshapeTensor(netPtr, inputs["bin_input"]!!, intArrayOf(1, 22, 19, 19))
         MNNNetNative.nativeReshapeTensor(netPtr, inputs["global_input"]!!, intArrayOf(1, 19))
         MNNNetNative.nativeReshapeTensor(netPtr, inputs["input_meta"]!!, intArrayOf(1, 192))

@@ -1,4 +1,4 @@
-"""Stage 0 gate: does the PyTorch humanv0 checkpoint reproduce `katago analysis` humanPolicy?
+"""Check whether the PyTorch checkpoint reproduces `katago analysis` humanPolicy.
 
 Runs the same position + profile through both and reports max abs diff / KL / top-1
 agreement. Uses rootNumSymmetriesToSample=1 so the engine does no symmetry averaging,

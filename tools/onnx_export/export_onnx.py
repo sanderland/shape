@@ -1,9 +1,7 @@
-"""Stage 0 deliverable: export b18c384nbt-humanv0 to ONNX and validate against katago.
+"""Export b18c384nbt-humanv0 to ONNX and validate it against KataGo.
 
-Exports a wrapper exposing only what SHAPE consumes (policy, value, lead), with a
-dynamic batch axis. Validates by running all 7 profiles as a SINGLE batch-of-7 --
-bin_input/global_input are identical across profiles and only input_meta differs,
-which is the batching win the mobile design depends on.
+The wrapper exposes only what SHAPE consumes: policy, value, and lead. Validation
+runs seven profiles in one batch and compares them with KataGo's analysis output.
 """
 
 import os

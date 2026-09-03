@@ -1,7 +1,7 @@
 [project]
-name = "shape-onnx-spike"
+name = "shape-model-tools"
 version = "0.1.0"
-description = "Stage 0 spike: export b18c384nbt-humanv0 to ONNX and validate against katago analysis"
+description = "Export SHAPE's KataGo human-policy model and validation fixtures"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "torch>=2.4",

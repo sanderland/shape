@@ -1,7 +1,42 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val signingProperties = Properties()
+val signingPropertiesFile = rootProject.file("key.properties")
+if (signingPropertiesFile.isFile) {
+    signingPropertiesFile.inputStream().use { signingProperties.load(it) }
+}
+
+fun signingValue(propertyName: String, environmentName: String): String? =
+    providers.environmentVariable(environmentName).orNull?.takeIf { it.isNotBlank() }
+        ?: signingProperties.getProperty(propertyName)?.takeIf { it.isNotBlank() }
+
+val releaseStorePath = signingValue("storeFile", "SHAPE_ANDROID_KEYSTORE")
+val releaseStorePassword = signingValue("storePassword", "SHAPE_ANDROID_STORE_PASSWORD")
+val releaseKeyAlias = signingValue("keyAlias", "SHAPE_ANDROID_KEY_ALIAS")
+val releaseKeyPassword = signingValue("keyPassword", "SHAPE_ANDROID_KEY_PASSWORD")
+val missingSigningValues =
+    listOf(
+        "storeFile" to releaseStorePath,
+        "storePassword" to releaseStorePassword,
+        "keyAlias" to releaseKeyAlias,
+        "keyPassword" to releaseKeyPassword,
+    ).filter { it.second == null }.map { it.first }
+val releaseSigningReady = missingSigningValues.isEmpty()
+
+if (
+    gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) } &&
+        !releaseSigningReady
+) {
+    throw GradleException(
+        "Release signing is not configured. Missing: ${missingSigningValues.joinToString()}. " +
+            "Set android/key.properties or the SHAPE_ANDROID_* environment variables.",
+    )
 }
 
 android {
@@ -32,24 +67,22 @@ android {
         versionName = flutter.versionName
     }
 
-    // Committed on purpose. Gradle generates ~/.android/debug.keystore per machine,
-    // so every CI runner signed with a different key and each new APK refused to
-    // install over the last one ("App not installed"). A fixed key makes updates
-    // work. It is worth nothing as a secret -- anyone with this repo can sign an
-    // APK that updates over a sideloaded build -- so it must be replaced with a
-    // real key kept out of the repo before this is published anywhere.
     signingConfigs {
-        create("sideload") {
-            storeFile = file("sideload.p12")
-            storePassword = "sideload"
-            keyAlias = "sideload"
-            keyPassword = "sideload"
+        if (releaseSigningReady) {
+            create("release") {
+                storeFile = file(releaseStorePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("sideload")
+            if (releaseSigningReady) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             // MNN resolves classes from JNI by name; see proguard-rules.pro.
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

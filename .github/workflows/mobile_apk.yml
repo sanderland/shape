@@ -172,8 +172,29 @@ jobs:
             exit 1
           }
 
+      - name: Configure release signing
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for name in RELEASE_KEYSTORE_BASE64 RELEASE_STORE_PASSWORD \
+                      RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then echo "MISSING SECRET: $name"; missing=1; fi
+          done
+          [ "$missing" = 0 ] || exit 1
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" \
+            | base64 --decode > "$RUNNER_TEMP/shape-release.p12"
+          echo "SHAPE_ANDROID_KEYSTORE=$RUNNER_TEMP/shape-release.p12" >> "$GITHUB_ENV"
+
       - name: Build release APK (arm64)
         working-directory: mobile/goshape
+        env:
+          SHAPE_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          SHAPE_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          SHAPE_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
         run: flutter build apk --release --split-per-abi --target-platform=android-arm64
 
       - name: Confirm the assets made it into the APK
@@ -203,9 +224,9 @@ jobs:
             const marker = '<!-- goshape-apk -->';
             const body = [
               marker,
-              '### 📱 SHAPE for Android — APK',
+              '### SHAPE for Android APK',
               '',
-              `**[Download the APK](${process.env.ARTIFACT_URL})** (arm64-v8a, sideload-signed)`,
+              `**[Download the APK](${process.env.ARTIFACT_URL})** (arm64-v8a, release-signed)`,
               '',
               'Open that link on the phone while signed into GitHub, unzip, and install the `.apk`.',
               'It needs no network and no permissions.',

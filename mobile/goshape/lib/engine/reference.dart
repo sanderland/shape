@@ -1,7 +1,7 @@
 // The fixed position the app checks itself against at startup.
 //
 // Shipped in assets/position.bin with the expected outputs in assets/reference.json,
-// both produced by the desktop export. Engine startup runs it once to confirm this
+// both produced by the export tool. Engine startup runs it once to confirm this
 // device computes the net correctly, because a net that is quietly wrong produces
 // feedback that looks entirely plausible and is not.
 
@@ -12,14 +12,14 @@ import 'package:flutter/services.dart';
 
 import 'features.dart';
 
-/// Tolerance for "same answer as desktop". fp32 rounding lands around 1e-5;
+/// Tolerance for matching the saved reference. fp32 rounding lands around 1e-5;
 /// anything near 1e-3 means the runtime is doing its own thing, and a wrong top
 /// move means it is broken outright.
 const double kReferenceTolerance = 1e-3;
 
-/// How far this device's output strayed from the desktop reference.
+/// How far this device's output strayed from the saved reference.
 class ReferenceCheck {
-  /// Largest disagreement over the moves desktop rated highest.
+  /// Largest disagreement over the reference's highest-rated moves.
   final double maxDiff;
   final bool topMoveOk;
   const ReferenceCheck(this.maxDiff, this.topMoveOk);
