@@ -5,7 +5,7 @@ human-policy model. It compares each move with the policies for your current ran
 and target rank. It can show likely moves, a rough score, and move-specific
 feedback. All inference runs on the phone.
 
-The Flutter app lives in [`mobile/goshape`](mobile/goshape). Its README covers
+The Flutter app lives in [`app`](app). Its README covers
 the controls, gameplay model, SGF support, tests, builds, signing, and known
 limits.
 
@@ -16,7 +16,7 @@ APK, so the model binary does not need to be committed.
 ## Check the app
 
 ```sh
-cd mobile/goshape
+cd app
 flutter analyze
 flutter test
 ```

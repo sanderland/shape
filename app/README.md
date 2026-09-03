@@ -1,4 +1,4 @@
-# SHAPE mobile
+# SHAPE Android
 
 SHAPE for Android is a portrait-only Go study app. It lets you play against a
 human-policy model at a chosen rank and compare each move with the policy at your

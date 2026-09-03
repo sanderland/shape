@@ -1,6 +1,8 @@
 """Generates the launcher icon: a board, a local shape, and the move that completes it.
 Run with any Python that has Pillow, then `dart run flutter_launcher_icons`."""
 
+from pathlib import Path
+
 from PIL import Image, ImageDraw
 
 S = 1024
@@ -51,7 +53,7 @@ def draw(img):
     return img
 
 
-out = "/Users/sanderland/Desktop/shape/mobile/goshape/icon"
-draw(Image.new("RGBA", (S, S), (0, 0, 0, 0))).save(f"{out}/foreground.png")
-draw(Image.new("RGBA", (S, S), BOARD)).save(f"{out}/icon.png")
+out = Path(__file__).parent
+draw(Image.new("RGBA", (S, S), (0, 0, 0, 0))).save(out / "foreground.png")
+draw(Image.new("RGBA", (S, S), BOARD)).save(out / "icon.png")
 print("written")

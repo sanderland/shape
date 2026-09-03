@@ -10,7 +10,7 @@ name: Mobile APK
 on:
   pull_request:
     paths:
-      - 'mobile/**'
+      - 'app/**'
       - 'tools/onnx_export/**'
       - '.github/workflows/mobile_apk.yml'
   workflow_dispatch:
@@ -118,14 +118,14 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: model
-          path: mobile/goshape/assets
+          path: app/assets
 
       # MNN publishes prebuilt Android .so files but no Maven artifact, and the
       # repo's .gitignore excludes *.so, so fetch them rather than committing
       # binaries. MNN is what the net runs on; only the CPU backend is shipped,
       # since OpenCL matched it and Vulkan crashed.
       - name: Fetch MNN Android runtime
-        working-directory: mobile/goshape
+        working-directory: app
         run: |
           pkg="mnn_${MNN_VERSION}_android_armv7_armv8_cpu_opencl_vulkan"
           curl -sL --retry 3 -o mnn.zip \
@@ -150,26 +150,26 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        working-directory: mobile/goshape
+        working-directory: app
         run: flutter pub get
 
       - name: Analyze
-        working-directory: mobile/goshape
+        working-directory: app
         run: flutter analyze
 
       # Checks the Dart metadata encoding against the exported KataGo reference.
       - name: Test
-        working-directory: mobile/goshape
+        working-directory: app
         run: flutter test
 
       # The ONNX is only the source the .mnn was converted from; shipping it would
       # add 107MB to the APK for nothing.
       - name: Drop the ONNX model
-        working-directory: mobile/goshape
+        working-directory: app
         run: rm -f assets/*.onnx
 
       - name: Check the assets the app needs are present
-        working-directory: mobile/goshape
+        working-directory: app
         run: |
           ls -la assets
           missing=0
@@ -228,11 +228,11 @@ jobs:
           echo "SHAPE_ANDROID_KEY_PASSWORD=$RELEASE_KEY_PASSWORD" >> "$GITHUB_ENV"
 
       - name: Build release APK (arm64)
-        working-directory: mobile/goshape
+        working-directory: app
         run: flutter build apk --release --split-per-abi --target-platform=android-arm64
 
       - name: Confirm the assets made it into the APK
-        working-directory: mobile/goshape
+        working-directory: app
         run: |
           apk=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           unzip -l "$apk" | grep -q "flutter_assets/assets/humanv0.mnn" \
@@ -244,8 +244,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         id: upload
         with:
-          name: goshape-arm64-apk
-          path: mobile/goshape/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          name: shape-arm64-apk
+          path: app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           retention-days: 30
 
       - name: Link the APK on the PR
