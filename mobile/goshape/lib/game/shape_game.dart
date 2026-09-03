@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import '../engine/analysis.dart';
 import '../engine/board.dart';
 import '../engine/features.dart';
+import 'sgf.dart';
 
 /// Ranks offered, weakest first.
 const List<String> kRanks = [
@@ -266,6 +267,7 @@ class ShapeGame extends ChangeNotifier {
   final Analyzer? engine;
 
   int boardSize;
+  Rules rules = Rules.japanese;
   final math.Random rng;
 
   /// The empty board. Everything played hangs off it.
@@ -318,6 +320,7 @@ class ShapeGame extends ChangeNotifier {
   // before you move, and only genuine mistakes called out afterwards.
   FeedbackMode feedbackMode = FeedbackMode.mistakesOnly;
   HeatmapMode heatmapMode = HeatmapMode.off;
+  bool showScore = true;
 
   /// Profile whose policy the board paints, or null when the heatmap is off.
   String? get heatmapProfile => switch (heatmapMode) {
@@ -416,7 +419,7 @@ class ShapeGame extends ChangeNotifier {
   ShapeGame(this.engine, {this.boardSize = 19, math.Random? random})
       : rng = random ?? math.Random() {
     current = root;
-    pos = GoPosition(boardSize, Rules.japanese);
+    pos = GoPosition(boardSize, rules);
   }
 
   /// Would autoplay move on from where we are now?
@@ -440,9 +443,7 @@ class ShapeGame extends ChangeNotifier {
       if (wantsFeedback) needed.add(kReferenceProfile);
       return needed.toList();
     }
-    // The score is shown on every position you can look at, so its profile is
-    // never optional.
-    needed.add(kReferenceProfile);
+    if (showScore) needed.add(kReferenceProfile);
     if (wantsFeedback) needed.addAll([playerRank, targetRank]);
     // The win estimate is read at your rank, which feedback already evaluates;
     // this only costs an extra call when the note is on and feedback is off.
@@ -487,7 +488,7 @@ class ShapeGame extends ChangeNotifier {
   ProfileAnalysis? analysisFor(String profile) => current.analyses[profile];
 
   GoPosition _positionFor(GameNode node) {
-    final p = GoPosition(boardSize, Rules.japanese);
+    final p = GoPosition(boardSize, rules);
     for (final m in node.path) {
       p.play(m.pla, m.loc);
     }
@@ -674,7 +675,7 @@ class ShapeGame extends ChangeNotifier {
 
   Future<void> _play(int loc) async {
     if (busy) return;
-    if (!pos.board.wouldBeLegal(pos.nextPlayer, loc)) {
+    if (!pos.wouldBeLegal(pos.nextPlayer, loc)) {
       error = 'Illegal move';
       notifyListeners();
       return;
@@ -847,7 +848,8 @@ class ShapeGame extends ChangeNotifier {
       error = null;
       boardSize = size ?? boardSize;
       humanColor = asColor ?? humanColor;
-      pos = GoPosition(boardSize, Rules.japanese);
+      rules = Rules.japanese;
+      pos = GoPosition(boardSize, rules);
       await _analyzeCurrent(autoReply: _autoReplyWouldFire);
     } catch (e) {
       error = '$e';
@@ -870,6 +872,16 @@ class ShapeGame extends ChangeNotifier {
   void setShowLowWinNote(bool value) {
     showLowWinNote = value;
     notifyListeners();
+  }
+
+  Future<void> setShowScore(bool value) async {
+    if (showScore == value) return;
+    showScore = value;
+    if (value) {
+      await _refresh();
+    } else {
+      notifyListeners();
+    }
   }
 
   void setLowWinThreshold(double value) {
@@ -932,9 +944,172 @@ class ShapeGame extends ChangeNotifier {
     await _refresh();
   }
 
+  /// Replace the current tree with one SGF game. Parsing and move validation
+  /// finish before any live state changes, so a bad file leaves the game alone.
+  Future<void> loadSgf(String source, {int? asColor, int? atMove}) async {
+    if (busy) return;
+    final imported = _buildSgfTree(source);
+
+    busy = true;
+    notifyListeners();
+    try {
+      boardSize = imported.size;
+      rules = imported.rules;
+      root = imported.root;
+      current = root;
+      final targetMove = atMove ?? root.endOfMainLine.depth;
+      while (current.children.isNotEmpty && current.depth < targetMove) {
+        current = current.continuation;
+      }
+      humanColor = asColor ?? humanColor;
+      pos = _positionFor(current);
+      _reviewReturn = null;
+      _refreshQueued = false;
+      feedback = null;
+      error = null;
+      await _analyzeCurrent();
+      await _updateFeedback();
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  ({int size, Rules rules, GameNode root}) _buildSgfTree(String source) {
+    final sgfRoot = parseSgf(source);
+    final gameType = sgfRoot.value('GM');
+    if (gameType != null && gameType != '1') {
+      throw const SgfFormatException('The selected SGF is not a Go game');
+    }
+
+    final sizeText = sgfRoot.value('SZ') ?? '19';
+    final size = int.tryParse(sizeText);
+    if (size == null || !kBoardSizes.contains(size)) {
+      throw SgfFormatException(
+          'Only 9x9, 13x13, and 19x19 SGFs are supported, not SZ[$sizeText]');
+    }
+
+    final komiText = sgfRoot.value('KM') ?? '6.5';
+    final komi = double.tryParse(komiText);
+    if (komi == null || !komi.isFinite) {
+      throw SgfFormatException('Invalid komi KM[$komiText]');
+    }
+    final importedRules = Rules.japanese.withKomi(komi);
+    final importedRoot = GameNode();
+    final position = GoPosition(size, importedRules);
+
+    void addNode(SgfNode sourceNode, GameNode parent) {
+      if (sourceNode.properties.containsKey('AE')) {
+        throw const SgfFormatException(
+            'SGF setup removals cannot be interpreted as moves');
+      }
+      final black = sourceNode.properties['B'];
+      final white = sourceNode.properties['W'];
+      if (black != null && white != null) {
+        throw const SgfFormatException(
+            'An SGF node cannot contain both B and W moves');
+      }
+
+      var nextParent = parent;
+      var movesAdded = 0;
+
+      void addMove(int pla, String value) {
+        final loc = _sgfLoc(value, position.board, size);
+        if (!position.wouldBeLegal(pla, loc)) {
+          final color = pla == Board.black ? 'Black' : 'White';
+          throw SgfFormatException('Illegal $color move [$value]');
+        }
+        position.play(pla, loc);
+        final child = GameNode(parent: nextParent, move: Move(pla, loc));
+        nextParent.children.add(child);
+        nextParent.selectedChild ??= child;
+        nextParent = child;
+        movesAdded++;
+      }
+
+      // Setup stones have no order in SGF. Treat all black placements, then all
+      // white placements, as ordinary moves in the app's tree.
+      for (final value in sourceNode.properties['AB'] ?? const <String>[]) {
+        for (final point in _sgfSetupPoints(value, size)) {
+          addMove(Board.black, point);
+        }
+      }
+      for (final value in sourceNode.properties['AW'] ?? const <String>[]) {
+        for (final point in _sgfSetupPoints(value, size)) {
+          addMove(Board.white, point);
+        }
+      }
+
+      final values = black ?? white;
+      if (values != null) {
+        if (values.length != 1) {
+          throw const SgfFormatException(
+              'An SGF move must have exactly one value');
+        }
+        addMove(black != null ? Board.black : Board.white, values.single);
+      }
+
+      for (final child in sourceNode.children) {
+        addNode(child, nextParent);
+      }
+      for (var i = 0; i < movesAdded; i++) {
+        position.undo();
+      }
+    }
+
+    addNode(sgfRoot, importedRoot);
+    return (size: size, rules: importedRules, root: importedRoot);
+  }
+
+  Iterable<String> _sgfSetupPoints(String value, int size) sync* {
+    if (!value.contains(':')) {
+      if (value.isEmpty) {
+        throw const SgfFormatException('A setup stone needs a coordinate');
+      }
+      yield value;
+      return;
+    }
+    final corners = value.split(':');
+    if (corners.length != 2 ||
+        corners[0].length != 2 ||
+        corners[1].length != 2) {
+      throw SgfFormatException('Invalid setup range [$value]');
+    }
+    final x0 = corners[0].codeUnitAt(0) - 97;
+    final y0 = corners[0].codeUnitAt(1) - 97;
+    final x1 = corners[1].codeUnitAt(0) - 97;
+    final y1 = corners[1].codeUnitAt(1) - 97;
+    if (x0 < 0 || y0 < 0 || x1 < x0 || y1 < y0 || x1 >= size || y1 >= size) {
+      throw SgfFormatException('Invalid setup range [$value]');
+    }
+    for (var y = y0; y <= y1; y++) {
+      for (var x = x0; x <= x1; x++) {
+        yield '${String.fromCharCode(97 + x)}${String.fromCharCode(97 + y)}';
+      }
+    }
+  }
+
+  int _sgfLoc(String value, Board board, int size) {
+    if (value.isEmpty || (value == 'tt' && size <= 19)) return Board.passLoc;
+    if (value.length != 2) {
+      throw SgfFormatException('Invalid move coordinate [$value]');
+    }
+    final x = value.codeUnitAt(0) - 97;
+    final y = value.codeUnitAt(1) - 97;
+    if (x < 0 || y < 0 || x >= size || y >= size) {
+      throw SgfFormatException(
+          'Move [$value] is outside the ${size}x$size board');
+    }
+    return board.loc(x, y);
+  }
+
   /// SGF for the whole tree, variations and all.
   String toSgf() {
-    final b = StringBuffer('(;GM[1]FF[4]CA[UTF-8]SZ[$boardSize]KM[6.5]RU[Japanese]');
+    final komi = rules.whiteKomi == rules.whiteKomi.roundToDouble()
+        ? rules.whiteKomi.toInt().toString()
+        : rules.whiteKomi.toString();
+    final b = StringBuffer(
+        '(;GM[1]FF[4]CA[UTF-8]SZ[$boardSize]KM[$komi]RU[Japanese]');
     b.write('PB[${humanColor == Board.black ? rankLabel(playerRank) : rankLabel(opponentRank)}]');
     b.write('PW[${humanColor == Board.white ? rankLabel(playerRank) : rankLabel(opponentRank)}]');
     _writeSgfChildren(b, root);
@@ -952,7 +1127,9 @@ class ShapeGame extends ChangeNotifier {
         n = n.children.first;
         continue;
       }
-      for (final c in n.children) {
+      final selected = n.continuation;
+      final ordered = [selected, ...n.children.where((c) => !identical(c, selected))];
+      for (final c in ordered) {
         b.write('(');
         b.write(_sgfMove(c.move!));
         _writeSgfChildren(b, c);

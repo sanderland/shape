@@ -21,9 +21,12 @@ permissions:
 
 env:
   KATAGO_TAG: v1.17.2
+  KATAGO_COMMIT: 6a1fc5de9fc253723ac475a0683bf0b9d9b7bd19
   CKPT_URL: https://github.com/lightvector/KataGo/releases/download/v1.15.0/b18c384nbt-humanv0.ckpt
+  CKPT_SHA256: 84b23476b56a73a775a0f09bad7d1c5c435690adb343aa851e80bf198c0c8b27
   MODEL_NAME: b18c384nbt-humanv0.onnx
   MNN_VERSION: 3.6.1
+  MNN_ANDROID_SHA256: 46dc7e86d45b8d4e957db81d2603e0b7f6c9ce9b84092ffdcee1b843cbfc9d71
 
 jobs:
   model:
@@ -49,20 +52,27 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           pip install --quiet \
-            'torch>=2.4' --index-url https://download.pytorch.org/whl/cpu
-          pip install --quiet 'numpy>=1.26' 'onnx>=1.16' 'onnxruntime>=1.19' packaging
+            'torch==2.13.0' --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet 'numpy==2.5.2' 'onnx==1.22.0' \
+            'onnxruntime==1.29.0' 'packaging==26.0'
           # MNN ships the converter used to produce the app's gameplay model.
           pip install --quiet 'MNN==3.6.1'
 
       - name: Fetch KataGo python package
         if: steps.cache.outputs.cache-hit != 'true'
-        run: git clone --depth 1 --branch "$KATAGO_TAG" https://github.com/lightvector/KataGo.git katago-src
+        run: |
+          git clone --depth 1 --branch "$KATAGO_TAG" https://github.com/lightvector/KataGo.git katago-src
+          [ "$(git -C katago-src rev-parse HEAD)" = "$KATAGO_COMMIT" ] || {
+            echo "KataGo tag no longer points to $KATAGO_COMMIT"
+            exit 1
+          }
 
       - name: Download human-SL checkpoint
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p models
           curl -fL --retry 3 -o models/b18c384nbt-humanv0.ckpt "$CKPT_URL"
+          echo "$CKPT_SHA256  models/b18c384nbt-humanv0.ckpt" | sha256sum --check -
           # torch >=2.6 refuses this checkpoint until its defaultdicts are migrated.
           PYTHONPATH="$PWD/katago-src/python" \
             python katago-src/python/migrate_defaultdict_to_dict.py \
@@ -120,6 +130,7 @@ jobs:
           pkg="mnn_${MNN_VERSION}_android_armv7_armv8_cpu_opencl_vulkan"
           curl -sL --retry 3 -o mnn.zip \
             "https://github.com/alibaba/MNN/releases/download/${MNN_VERSION}/${pkg}.zip"
+          echo "$MNN_ANDROID_SHA256  mnn.zip" | sha256sum --check -
           unzip -q mnn.zip
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
           for l in libMNN.so libMNN_Express.so libmnncore.so libc++_shared.so; do
@@ -135,7 +146,7 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: '3.47.0'
           cache: true
 
       - name: Install dependencies
@@ -172,7 +183,31 @@ jobs:
             exit 1
           }
 
-      - name: Configure release signing
+      # Pull-request code never receives the production key. This key identifies
+      # only the preview artifact from this one run.
+      - name: Configure preview signing
+        if: github.event_name == 'pull_request'
+        run: |
+          keytool -genkeypair -noprompt \
+            -keystore "$RUNNER_TEMP/shape-preview.p12" -storetype PKCS12 \
+            -storepass preview-build -keypass preview-build -alias preview \
+            -keyalg RSA -keysize 3072 -validity 30 \
+            -dname "CN=SHAPE pull request preview"
+          echo "SHAPE_ANDROID_KEYSTORE=$RUNNER_TEMP/shape-preview.p12" >> "$GITHUB_ENV"
+          echo "SHAPE_ANDROID_STORE_PASSWORD=preview-build" >> "$GITHUB_ENV"
+          echo "SHAPE_ANDROID_KEY_ALIAS=preview" >> "$GITHUB_ENV"
+          echo "SHAPE_ANDROID_KEY_PASSWORD=preview-build" >> "$GITHUB_ENV"
+
+      - name: Require the trusted release branch
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          [ "$GITHUB_REF" = 'refs/heads/main' ] || {
+            echo "Production releases must run from main, not $GITHUB_REF"
+            exit 1
+          }
+
+      - name: Configure production signing
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
           RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
@@ -188,13 +223,12 @@ jobs:
           printf '%s' "$RELEASE_KEYSTORE_BASE64" \
             | base64 --decode > "$RUNNER_TEMP/shape-release.p12"
           echo "SHAPE_ANDROID_KEYSTORE=$RUNNER_TEMP/shape-release.p12" >> "$GITHUB_ENV"
+          echo "SHAPE_ANDROID_STORE_PASSWORD=$RELEASE_STORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "SHAPE_ANDROID_KEY_ALIAS=$RELEASE_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "SHAPE_ANDROID_KEY_PASSWORD=$RELEASE_KEY_PASSWORD" >> "$GITHUB_ENV"
 
       - name: Build release APK (arm64)
         working-directory: mobile/goshape
-        env:
-          SHAPE_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
-          SHAPE_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
-          SHAPE_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
         run: flutter build apk --release --split-per-abi --target-platform=android-arm64
 
       - name: Confirm the assets made it into the APK
@@ -226,7 +260,7 @@ jobs:
               marker,
               '### SHAPE for Android APK',
               '',
-              `**[Download the APK](${process.env.ARTIFACT_URL})** (arm64-v8a, release-signed)`,
+              `**[Download the APK](${process.env.ARTIFACT_URL})** (arm64-v8a, preview-signed)`,
               '',
               'Open that link on the phone while signed into GitHub, unzip, and install the `.apk`.',
               'It needs no network and no permissions.',

@@ -299,6 +299,10 @@ void main() {
     g.setShowLowWinNote(false);
     expect(g.activeProfiles, [kReferenceProfile],
         reason: 'and it goes away with the note');
+    await g.setShowScore(false);
+    expect(g.activeProfiles, isEmpty,
+        reason: 'a hidden score does not cost an otherwise unused evaluation');
+    await g.setShowScore(true);
     g.setShowLowWinNote(true);
 
     // Heatmap alone pulls in exactly the painted profile, not the feedback set.
@@ -837,6 +841,25 @@ void main() {
     await g.playAt(2, 2); // occupied
     expect(g.line.length, len);
     expect(g.error, isNotNull);
+  });
+
+  test('game-level Japanese legality rejects group suicide', () async {
+    final g = ShapeGame(null, boardSize: 5);
+    await g.start();
+    final b = g.pos.board;
+    for (final (x, y) in [
+      (0, 2), (1, 1), (1, 3), (2, 1),
+      (2, 3), (4, 2), (3, 1), (3, 3),
+    ]) {
+      b.addUnsafe(Board.white, b.loc(x, y));
+    }
+    b.addUnsafe(Board.black, b.loc(1, 2));
+    b.addUnsafe(Board.black, b.loc(3, 2));
+
+    await g.playAt(2, 2);
+
+    expect(g.line, isEmpty);
+    expect(g.error, 'Illegal move');
   });
 
   test('new game stays busy until its initial analysis finishes', () async {

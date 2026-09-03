@@ -148,6 +148,23 @@ class Board {
     return true;
   }
 
+  /// Whether playing here would remove the newly joined friendly group.
+  ///
+  /// KataGo's low-level board permits this when the group has more than one
+  /// stone, because some rulesets allow it. The rules-aware position decides
+  /// whether that is legal.
+  bool wouldBeSuicide(int p, int l) {
+    if (l == passLoc) return false;
+    final opp = getOpp(p);
+    for (final dloc in adj) {
+      final a = l + dloc;
+      if (board[a] == empty) return false;
+      if (board[a] == opp && groupLibertyCount[groupHead[a]] == 1) return false;
+      if (board[a] == p && groupLibertyCount[groupHead[a]] > 1) return false;
+    }
+    return true;
+  }
+
   /// Liberties a new stone here would have, capped at [maxLibs].
   int getLibertiesAfterPlay(int p, int l, int maxLibs) {
     final opp = getOpp(p);

@@ -224,6 +224,12 @@ class _HomePageState extends State<HomePage> {
               await g.pass();
             case 'new':
               await _newGame(g);
+            case 'open':
+              await _openSgf(g);
+            case 'save':
+              await _saveSgf(g);
+            case 'retry':
+              await _retryEngine();
             case 'ranks':
               await _editRanks(g);
           }
@@ -250,6 +256,37 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           PopupMenuItem(
+            value: 'open',
+            enabled: !g.busy,
+            child: const ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.folder_open),
+              title: Text('Open SGF'),
+            ),
+          ),
+          PopupMenuItem(
+            value: 'save',
+            enabled: !g.busy,
+            child: const ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.save_alt),
+              title: Text('Save SGF'),
+            ),
+          ),
+          if (!g.hasEngine)
+            PopupMenuItem(
+              value: 'retry',
+              enabled: !g.busy,
+              child: const ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.replay),
+                title: Text('Retry model'),
+              ),
+            ),
+          PopupMenuItem(
             value: 'ranks',
             enabled: !g.busy,
             child: ListTile(
@@ -272,12 +309,6 @@ class _HomePageState extends State<HomePage> {
               _stat('Board', '${g.boardSize}×${g.boardSize}'),
               _stat('Move', '${g.cursor} of ${g.currentLine.length}'),
               _stat('Mistakes', '${g.knownMistakes.length}'),
-              _stat(
-                  'Score',
-                  g.scoreLeadForBlack == null
-                      ? '—'
-                      : '${GameNotice.scoreLabel(g.scoreLeadForBlack)}'
-                          '  (${rankLabel(kReferenceProfile)}, no search)'),
               _stat('Engine', g.hasEngine ? g.engine!.provider : 'none'),
               if (g.hasEngine)
                 _stat('Speed',
@@ -287,6 +318,77 @@ class _HomePageState extends State<HomePage> {
         ],
         icon: const Icon(Icons.menu),
       );
+
+  Future<void> _openSgf(ShapeGame g) async {
+    try {
+      final source = await openSgfDocument();
+      if (source == null || !mounted) return;
+      await g.loadSgf(source);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Loaded ${g.cursor} moves')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open SGF: ${describeFailure(e)}')),
+        );
+      }
+    }
+  }
+
+  Future<void> _saveSgf(ShapeGame g) async {
+    final now = DateTime.now();
+    final date = '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
+    try {
+      final saved = await saveSgfDocument(g.toSgf(), 'shape-$date.sgf');
+      if (saved == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('SGF saved')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save SGF: ${describeFailure(e)}')),
+        );
+      }
+    }
+  }
+
+  Future<void> _retryEngine() async {
+    final old = game;
+    if (old == null) return;
+    final sgf = old.toSgf();
+    final oldCursor = old.cursor;
+    old.removeListener(_onGameChanged);
+    if (old.engine case final ShapeEngine engine) await engine.close();
+    if (!mounted) return;
+    setState(() {
+      game = null;
+      loadError = null;
+      status = 'loading model…';
+    });
+    await _load();
+    final replacement = game;
+    if (replacement == null) return;
+    replacement
+      ..playerRank = old.playerRank
+      ..opponentRank = old.opponentRank
+      ..targetRank = old.targetRank
+      ..autoplayOpponent = old.autoplayOpponent
+      ..feedbackMode = old.feedbackMode
+      ..heatmapMode = old.heatmapMode
+      ..showScore = old.showScore
+      ..mistakePoints = old.mistakePoints
+      ..showLowWinNote = old.showLowWinNote
+      ..lowWinThreshold = old.lowWinThreshold;
+    await replacement.loadSgf(sgf,
+        asColor: old.humanColor, atMove: oldCursor);
+  }
 
   /// One labelled row of the diagnostics block, so the numbers line up instead of
   /// running together.
@@ -401,7 +503,7 @@ class _HomePageState extends State<HomePage> {
             gameOver: g.gameOver,
             opponentPassed: g.opponentJustPassed,
             opponentRank: g.opponentRank,
-            scoreLeadForBlack: g.scoreLeadForBlack,
+            scoreLeadForBlack: g.showScore ? g.scoreLeadForBlack : null,
           ),
           if (g.lowWinProbability case final probability?)
             LowWinNotice(probability: probability, rank: g.playerRank),
@@ -414,18 +516,32 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 6),
           ],
-          // The off segment names the row, so neither needs a label line above it
-          // breaking the flow between the board and the controls.
-          SegmentedButton<FeedbackMode>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: FeedbackMode.off, label: Text('Feedback off')),
-              ButtonSegment(value: FeedbackMode.mistakesOnly, label: Text('Mistakes')),
-              ButtonSegment(value: FeedbackMode.all, label: Text('Every move')),
+          Row(
+            children: [
+              Expanded(
+                child: SegmentedButton<FeedbackMode>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(
+                        value: FeedbackMode.off,
+                        label: Text('Off'),
+                        tooltip: 'Feedback off'),
+                    ButtonSegment(
+                        value: FeedbackMode.mistakesOnly,
+                        label: Text('Mistakes')),
+                    ButtonSegment(
+                        value: FeedbackMode.all,
+                        label: Text('All'),
+                        tooltip: 'Feedback after every move'),
+                  ],
+                  selected: {g.feedbackMode},
+                  onSelectionChanged:
+                      analysisEnabled ? (s) => g.setFeedbackMode(s.first) : null,
+                ),
+              ),
+              const SizedBox(width: 6),
+              _scoreButton(g, analysisEnabled),
             ],
-            selected: {g.feedbackMode},
-            onSelectionChanged:
-                analysisEnabled ? (s) => g.setFeedbackMode(s.first) : null,
           ),
           const SizedBox(height: 6),
           SegmentedButton<HeatmapMode>(
@@ -453,6 +569,35 @@ class _HomePageState extends State<HomePage> {
             Text(g.error!, style: const TextStyle(color: Colors.red, fontSize: 11)),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _scoreButton(ShapeGame g, bool enabled) {
+    final label = g.showScore
+        ? GameNotice.scoreLabel(g.scoreLeadForBlack) ?? '…'
+        : 'Score';
+    return Tooltip(
+      message: g.showScore ? 'Hide score estimate' : 'Show score estimate',
+      child: OutlinedButton(
+        onPressed: enabled ? () => g.setShowScore(!g.showScore) : null,
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(78, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+                g.showScore
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+                size: 18),
+            const SizedBox(width: 4),
+            Text(label,
+                style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+          ],
+        ),
       ),
     );
   }

@@ -13,6 +13,7 @@ does not need a network connection or account.
 - policy overlays for your rank, your target rank, or the professional profile
 - a move tree: playing from history creates a variation, and explored next moves
   remain marked on the board
+- SGF import and export through Android's document picker
 - review and previous/next-mistake navigation
 - a board-only fallback when the model cannot run
 
@@ -61,8 +62,8 @@ The tests do not require an emulator or model. The main coverage is:
 ## Build
 
 CI exports and converts the model, downloads the MNN Android libraries, runs the
-tests, and builds a release-signed arm64 APK. The workflow attaches the APK to
-the pull request.
+tests, and builds an arm64 APK. Pull requests use a disposable preview key. A
+manual workflow run from `main` uses the production key.
 
 For a local build, provide `assets/humanv0.mnn` and the required arm64 MNN shared
 libraries under `android/app/src/main/jniLibs/arm64-v8a/`, then run:
@@ -131,6 +132,9 @@ python export_fixtures.py
   searched KataGo analysis.
 - Only Japanese territory scoring is supported. Area scoring needs KataGo's
   pass-alive calculation, which is not ported.
+- SGF import supports move trees on 9×9, 13×13, and 19×19 boards. The app uses
+  Japanese rules regardless of `RU`, and imports `AB`/`AW` setup stones as moves.
+  `AE` setup removals are rejected because they cannot be represented as moves.
 - The board implements simple ko, not superko, matching the Python reference used
   by the featurizer.
 - The automatic opponent passes by sampling the pass probability. There is no

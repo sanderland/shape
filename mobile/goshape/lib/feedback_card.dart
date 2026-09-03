@@ -200,7 +200,9 @@ class GameNotice extends StatelessWidget {
             const Color(0xFF37474F),
             Icons.flag_outlined,
             score == null ? 'Game over' : 'Game over · $score',
-            'Both players passed. Score estimated by the net, without search.',
+            score == null
+                ? 'Both players passed.'
+                : 'Both players passed. Score estimated by the net, without search.',
           )
         : (
             const Color(0xFF00695C),

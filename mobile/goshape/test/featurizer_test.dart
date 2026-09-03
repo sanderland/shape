@@ -15,6 +15,36 @@ import 'package:goshape/engine/board.dart';
 import 'package:goshape/engine/features.dart';
 
 void main() {
+  test('Japanese rules reject multi-stone suicide', () {
+    GoPosition surrounded(Rules rules) {
+      final pos = GoPosition(5, rules);
+      final b = pos.board;
+      for (final (x, y) in [
+        (0, 2), (1, 1), (1, 3), (2, 1),
+        (2, 3), (4, 2), (3, 1), (3, 3),
+      ]) {
+        b.addUnsafe(Board.white, b.loc(x, y));
+      }
+      b.addUnsafe(Board.black, b.loc(1, 2));
+      b.addUnsafe(Board.black, b.loc(3, 2));
+      return pos;
+    }
+
+    final japanese = surrounded(Rules.japanese);
+    final center = japanese.board.loc(2, 2);
+    expect(japanese.board.wouldBeLegal(Board.black, center), isTrue,
+        reason: 'the low-level board intentionally permits group self-capture');
+    expect(japanese.wouldBeLegal(Board.black, center), isFalse);
+
+    final trompTaylor = surrounded(Rules.trompTaylor);
+    final ttCenter = trompTaylor.board.loc(2, 2);
+    expect(trompTaylor.wouldBeLegal(Board.black, ttCenter), isTrue);
+    trompTaylor.play(Board.black, ttCenter);
+    expect(trompTaylor.board.board[trompTaylor.board.loc(1, 2)], Board.empty);
+    expect(trompTaylor.board.board[trompTaylor.board.loc(2, 2)], Board.empty);
+    expect(trompTaylor.board.board[trompTaylor.board.loc(3, 2)], Board.empty);
+  });
+
   final raw = jsonDecode(File('assets/featurizer_fixtures.json').readAsStringSync())
       as Map<String, dynamic>;
   final posLen = raw['posLen'] as int;

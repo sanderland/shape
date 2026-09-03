@@ -58,6 +58,18 @@ class Rules {
     whiteKomi: 7.5,
   );
 
+  Rules withKomi(double komi) => Rules(
+        koRule: koRule,
+        scoringRule: scoringRule,
+        taxRule: taxRule,
+        multiStoneSuicideLegal: multiStoneSuicideLegal,
+        hasButton: hasButton,
+        encorePhase: encorePhase,
+        passWouldEndPhase: passWouldEndPhase,
+        whiteKomi: komi,
+        asymPowersOfTwo: asymPowersOfTwo,
+      );
+
   /// SGF `RU` values, as SHAPE writes them.
   static Rules fromName(String name) {
     switch (name.toLowerCase()) {
@@ -96,6 +108,12 @@ class GoPosition {
   }
 
   int get nextPlayer => board.pla;
+
+  /// Full legality for the selected ruleset. [Board.wouldBeLegal] deliberately
+  /// permits multi-stone self-capture for rulesets that allow it.
+  bool wouldBeLegal(int pla, int loc) =>
+      board.wouldBeLegal(pla, loc) &&
+      (rules.multiStoneSuicideLegal || !board.wouldBeSuicide(pla, loc));
 
   void play(int pla, int loc) {
     board.play(pla, loc);

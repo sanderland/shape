@@ -1,5 +1,7 @@
 package io.github.sanderland.goshape
 
+import android.app.Activity
+import android.content.Intent
 import android.os.Build
 import com.taobao.android.mnn.MNNNetNative
 import io.flutter.embedding.android.FlutterActivity
@@ -19,9 +21,14 @@ class MainActivity : FlutterActivity() {
     private var sessionPtr = 0L
     private val inputs = HashMap<String, Long>()
     private val outputs = HashMap<String, Long>()
+    private var pendingDocumentResult: MethodChannel.Result? = null
+    private var pendingSaveText: String? = null
 
     private companion object {
         const val CHANNEL = "shape/host"
+        const val OPEN_SGF_REQUEST = 701
+        const val SAVE_SGF_REQUEST = 702
+        const val MAX_SGF_CHARS = 10 * 1024 * 1024
 
         /** MNNForwardType MNN_FORWARD_CPU. The GPU backends were measured and are
          *  not worth having: OpenCL matched the CPU to within a millisecond and
@@ -40,6 +47,12 @@ class MainActivity : FlutterActivity() {
                     when (call.method) {
                         "cacheDir" -> result.success(cacheDir.absolutePath)
                         "version" -> result.success(appVersion())
+                        "openSgf" -> openSgf(result)
+                        "saveSgf" -> saveSgf(
+                            call.argument<String>("contents")!!,
+                            call.argument<String>("filename")!!,
+                            result,
+                        )
                         "load" -> {
                             load(call.argument<String>("path")!!)
                             result.success(null)
@@ -58,10 +71,82 @@ class MainActivity : FlutterActivity() {
                         else -> result.notImplemented()
                     }
                 } catch (e: Throwable) {
-                    releaseMnn()
-                    result.error("mnn", "${e.javaClass.simpleName}: ${e.message ?: e}", null)
+                    if (call.method == "load" || call.method == "run") releaseMnn()
+                    pendingDocumentResult = null
+                    pendingSaveText = null
+                    result.error("host", "${e.javaClass.simpleName}: ${e.message ?: e}", null)
                 }
             }
+    }
+
+    private fun openSgf(result: MethodChannel.Result) {
+        check(pendingDocumentResult == null) { "a document picker is already open" }
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(
+                Intent.EXTRA_MIME_TYPES,
+                arrayOf("application/x-go-sgf", "application/sgf", "text/plain"),
+            )
+        }
+        pendingDocumentResult = result
+        try {
+            startActivityForResult(intent, OPEN_SGF_REQUEST)
+        } catch (e: Throwable) {
+            pendingDocumentResult = null
+            throw e
+        }
+    }
+
+    private fun saveSgf(contents: String, filename: String, result: MethodChannel.Result) {
+        check(pendingDocumentResult == null) { "a document picker is already open" }
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/x-go-sgf"
+            putExtra(Intent.EXTRA_TITLE, filename)
+        }
+        pendingDocumentResult = result
+        pendingSaveText = contents
+        try {
+            startActivityForResult(intent, SAVE_SGF_REQUEST)
+        } catch (e: Throwable) {
+            pendingDocumentResult = null
+            pendingSaveText = null
+            throw e
+        }
+    }
+
+    @Deprecated("The Android document picker still reports through this Activity API")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != OPEN_SGF_REQUEST && requestCode != SAVE_SGF_REQUEST) return
+
+        val result = pendingDocumentResult ?: return
+        val text = pendingSaveText
+        pendingDocumentResult = null
+        pendingSaveText = null
+        if (resultCode != Activity.RESULT_OK || data?.data == null) {
+            result.success(null)
+            return
+        }
+
+        try {
+            val uri = data.data!!
+            if (requestCode == OPEN_SGF_REQUEST) {
+                val contents = contentResolver.openInputStream(uri)?.bufferedReader()?.use {
+                    it.readText()
+                } ?: error("could not open the selected SGF")
+                check(contents.length <= MAX_SGF_CHARS) { "SGF is larger than 10 MB" }
+                result.success(contents)
+            } else {
+                contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use {
+                    it.write(text ?: error("missing SGF contents"))
+                } ?: error("could not write the selected file")
+                result.success(true)
+            }
+        } catch (e: Throwable) {
+            result.error("document", "${e.javaClass.simpleName}: ${e.message ?: e}", null)
+        }
     }
 
     /** Version name and code, straight from the installed package. */
@@ -129,7 +214,9 @@ class MainActivity : FlutterActivity() {
         MNNNetNative.nativeReshapeTensor(netPtr, inputs["bin_input"]!!, intArrayOf(1, 22, 19, 19))
         MNNNetNative.nativeReshapeTensor(netPtr, inputs["global_input"]!!, intArrayOf(1, 19))
         MNNNetNative.nativeReshapeTensor(netPtr, inputs["input_meta"]!!, intArrayOf(1, 192))
-        MNNNetNative.nativeReshapeSession(netPtr, sessionPtr)
+        check(MNNNetNative.nativeReshapeSession(netPtr, sessionPtr) == 0) {
+            "MNN could not reshape the session"
+        }
 
         // Output tensors must be fetched after the reshape, or they describe the
         // pre-resize plan.
@@ -142,11 +229,16 @@ class MainActivity : FlutterActivity() {
 
     private fun run(bin: FloatArray, global: FloatArray, meta: FloatArray): Map<String, FloatArray> {
         check(sessionPtr != 0L) { "no MNN session" }
+        check(bin.size == 22 * 19 * 19) { "wrong bin input size ${bin.size}" }
+        check(global.size == 19) { "wrong global input size ${global.size}" }
+        check(meta.size == 192) { "wrong metadata input size ${meta.size}" }
         MNNNetNative.nativeSetInputFloatData(netPtr, inputs["bin_input"]!!, bin)
         MNNNetNative.nativeSetInputFloatData(netPtr, inputs["global_input"]!!, global)
         MNNNetNative.nativeSetInputFloatData(netPtr, inputs["input_meta"]!!, meta)
 
-        MNNNetNative.nativeRunSession(netPtr, sessionPtr)
+        check(MNNNetNative.nativeRunSession(netPtr, sessionPtr) == 0) {
+            "MNN inference failed"
+        }
 
         return OUTPUT_NAMES.associateWith { name ->
             val t = outputs[name]!!
@@ -154,8 +246,16 @@ class MainActivity : FlutterActivity() {
             // which is one more thing that could be wrong in native code.
             var n = 1
             for (d in MNNNetNative.nativeTensorGetDimensions(t)) n *= d
+            val expected = when (name) {
+                "policy" -> 19 * 19 + 1
+                "value" -> 3
+                "lead" -> 1
+                else -> error("unknown output $name")
+            }
+            check(n == expected) { "$name output has $n values, expected $expected" }
             val buf = FloatArray(n)
             MNNNetNative.nativeTensorGetData(t, buf)
+            check(buf.all { it.isFinite() }) { "$name output contains a non-finite value" }
             buf
         }
     }

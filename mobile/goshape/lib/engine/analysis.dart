@@ -26,13 +26,18 @@ class PolicyData {
   final Uint8List _legal;
   late final double maxProb;
 
-  PolicyData(this.data, this.posLen, Board board)
+  PolicyData(this.data, this.posLen, Board board,
+      {bool multiStoneSuicideLegal = false})
       : boardSize = board.xSize,
         _legal = Uint8List(board.xSize * board.ySize) {
     var m = 0.0;
     for (var y = 0; y < board.ySize; y++) {
       for (var x = 0; x < board.xSize; x++) {
-        if (!board.wouldBeLegal(board.pla, board.loc(x, y))) continue;
+        final loc = board.loc(x, y);
+        if (!board.wouldBeLegal(board.pla, loc) ||
+            (!multiStoneSuicideLegal && board.wouldBeSuicide(board.pla, loc))) {
+          continue;
+        }
         _legal[y * board.xSize + x] = 1;
         final p = probAt(x, y);
         if (p > m) m = p;
@@ -159,9 +164,10 @@ class ShapeEngine implements Analyzer {
   /// Loading is not enough: the net must reproduce the exported reference on the
   /// bundled position (see reference.dart).
   static Future<ShapeEngine> load({int posLen = 19}) async {
-    if (await EngineTrial.crashedBefore()) {
+    if (await EngineTrial.takePreviousFailure()) {
       throw const EngineUnavailable(
-          'the engine crashed this device on an earlier run, so it was not started again');
+          'the previous model startup did not finish, so it was skipped once; '
+          'use Retry model to try again');
     }
     await EngineTrial.begin();
     ShapeEngine? engine;
@@ -205,7 +211,8 @@ class ShapeEngine implements Analyzer {
       final o = await runner.run(f.bin, f.global, meta);
       final decisive = o.outcome[0] + o.outcome[1];
       out[profile] = ProfileAnalysis(
-        PolicyData(o.policy, posLen, pos.board),
+        PolicyData(o.policy, posLen, pos.board,
+            multiStoneSuicideLegal: pos.rules.multiStoneSuicideLegal),
         o.lead,
         sideToMoveWinProb: decisive > 0 ? o.outcome[0] / decisive : null,
       );

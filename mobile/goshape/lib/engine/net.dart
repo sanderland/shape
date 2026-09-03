@@ -25,6 +25,16 @@ Future<String?> hostVersion() async {
   }
 }
 
+/// Ask Android's document picker for an SGF. Null means it was cancelled.
+Future<String?> openSgfDocument() => _host.invokeMethod<String>('openSgf');
+
+/// Ask Android's document picker where to save an SGF. Null means cancellation.
+Future<bool?> saveSgfDocument(String contents, String filename) =>
+    _host.invokeMethod<bool>('saveSgf', {
+      'contents': contents,
+      'filename': filename,
+    });
+
 /// One evaluation of the net.
 class NetOutputs {
   final Float32List policy;
@@ -46,19 +56,27 @@ abstract class NetRunner {
   Future<void> close();
 }
 
-/// A breadcrumb that outlives the process, so a device that faults does so once.
+/// A breadcrumb that outlives an interrupted model startup.
 ///
 /// A SIGILL inside libMNN kills the process before any handler runs, so nothing
 /// the app writes at the time survives. The marker therefore goes down *before*
-/// the first call and is cleared once one has returned. Finding it still there at
-/// the next launch means the engine killed us, and the app starts without one.
+/// the first call and is cleared once one has returned. An OS kill or force-close
+/// can leave it too, so the next launch consumes it and skips startup once. The
+/// menu then offers an explicit retry.
 class EngineTrial {
   static File? _file;
 
   static Future<File> _handle() async =>
       _file ??= File('${await MnnRunner.cacheDir()}/engine_trial');
 
-  static Future<bool> crashedBefore() async => (await _handle()).existsSync();
+  /// Consume an unfinished trial. Automatic startup is skipped once, but an
+  /// interrupted launch cannot disable the engine forever.
+  static Future<bool> takePreviousFailure() async {
+    final f = await _handle();
+    if (!f.existsSync()) return false;
+    f.deleteSync();
+    return true;
+  }
 
   static Future<void> begin() async =>
       (await _handle()).writeAsStringSync('loading engine', flush: true);
