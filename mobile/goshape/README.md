@@ -11,6 +11,7 @@ does not need a network connection or account.
 - an opponent sampled from KataGo's human-SL policy at a selected rank
 - optional feedback after mistakes or after every move
 - policy overlays for your rank, your target rank, or the professional profile
+- a rough score estimate that can be hidden while you play
 - a move tree: playing from history creates a variation, and explored next moves
   remain marked on the board
 - SGF import and export through Android's document picker
@@ -19,6 +20,18 @@ does not need a network connection or account.
 
 The default presentation is intentionally restrained: the policy is hidden while
 you decide, and post-move feedback appears only for moves classified as mistakes.
+
+## Playing
+
+Aim with your finger and release to play. The Feedback buttons control what the
+app says after a move. The Policy buttons show likely moves before you play. The
+eye button shows or hides the score estimate.
+
+The single arrows browse the current line. The double arrows jump between known
+mistakes. The bulb shows what your target rank might have played. Playing from an
+earlier position adds a variation rather than deleting the later moves.
+
+Pass, new game, SGF open/save, settings, and a short help screen are in the menu.
 
 ## Runtime
 
@@ -56,6 +69,8 @@ The tests do not require an emulator or model. The main coverage is:
 - `sgf_metadata_test.dart`: all metadata channels across representative profiles
 - `shape_game_test.dart`: move-tree behavior, navigation, analysis caching,
   opponent sampling, feedback, and queued setting changes
+- `sgf_test.dart`: SGF parsing, variations, setup stones, and round trips
+- `engine_trial_test.dart`: one-launch safe mode after interrupted model startup
 - `policy_data_test.dart`: legal-move filtering and pass sampling
 - `verdict_test.dart`: the feedback classification thresholds
 

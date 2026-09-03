@@ -2,12 +2,12 @@
 
 SHAPE is a portrait-only Android app for practising Go against KataGo's
 human-policy model. It compares each move with the policies for your current rank
-and target rank. All inference runs on the phone.
-
-![SHAPE after a move](mobile/goshape/docs/android-play-feedback.png)
+and target rank. It can show likely moves, a rough score, and move-specific
+feedback. All inference runs on the phone.
 
 The Flutter app lives in [`mobile/goshape`](mobile/goshape). Its README covers
-the gameplay model, tests, local builds, release signing, and known limits.
+the controls, gameplay model, SGF support, tests, builds, signing, and known
+limits.
 
 The remaining Python under `tools/` exports the KataGo checkpoint, fixtures, and
 MNN model used by the Android build. CI runs those exporters before it builds the

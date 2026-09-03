@@ -232,6 +232,8 @@ class _HomePageState extends State<HomePage> {
               await _retryEngine();
             case 'ranks':
               await _editRanks(g);
+            case 'help':
+              await _showHelp();
           }
         },
         itemBuilder: (_) => [
@@ -298,6 +300,15 @@ class _HomePageState extends State<HomePage> {
                   '· ${rankLabel(g.opponentRank)}'),
             ),
           ),
+          const PopupMenuItem(
+            value: 'help',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.help_outline),
+              title: Text('Help'),
+            ),
+          ),
           const PopupMenuDivider(),
           PopupMenuItem(
             enabled: false,
@@ -317,6 +328,32 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
         icon: const Icon(Icons.menu),
+      );
+
+  Future<void> _showHelp() => showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('How to use SHAPE'),
+          content: const SingleChildScrollView(
+            child: Text(
+              'Aim with your finger and release to play.\n\n'
+              'Feedback judges your move after you play. Choose Off, Mistakes, '
+              'or All. Policy shows likely moves before you play.\n\n'
+              'The eye shows or hides the rough score estimate. It does not use '
+              'search.\n\n'
+              'Single arrows browse the game. Double arrows jump between known '
+              'mistakes. The bulb shows what your target rank might have played.\n\n'
+              'Playing from history adds a variation. Pass, SGF files, and '
+              'settings are in this menu.',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
       );
 
   Future<void> _openSgf(ShapeGame g) async {
