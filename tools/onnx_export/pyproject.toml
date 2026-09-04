@@ -1,0 +1,16 @@
+[project]
+name = "shape-model-tools"
+version = "0.1.0"
+description = "Export SHAPE's KataGo human-policy model and validation fixtures"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "torch==2.13.0",
+    "numpy==2.5.2",
+    "onnx==1.22.0",
+    "onnxruntime==1.29.0",
+    "packaging==26.0",
+    "onnxconverter-common==1.16.0",
+]
+
+[tool.uv]
+package = false

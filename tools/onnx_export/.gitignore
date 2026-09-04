@@ -1,0 +1,5 @@
+.venv/
+uv.lock
+assets/
+*.onnx
+*.ckpt

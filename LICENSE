@@ -1,26 +1,4 @@
-This repository includes:
-
-1. Binaries for 'KataGo', which is Copyright David J Wu et al.
-For on related licenses for these binaries and libraries see https://github.com/lightvector/KataGo
-
-2. Icons from www.flaticon.com, used with permission with the following attributions:
-- Equalize icon and Thrash Icon: derived from work by bqlqn from www.flaticon.com
-- Other Menu icons, Finish, Collaboration and Flag icons: derived from work by Freepik from www.flaticon.com
-- Collapse branch icon: derived from work by Kirill Kazachek from www.flaticon.com
-- Prune icon: derived from work by Pixelmeetup from www.flaticon.com
-- Reset icon: derived from work by Pixel Perfect from www.flaticon.com
-- Rotate icon:  derived from work by Frey Wazza from www.flaticon.com
-
-3. The True Type Font DIGITAL-7 version 1.02 by Sizenko Alexander, which is free for non-commercial use.
-
-4. The Noto Sans fonts from google which are covered by the SIL open font license v1.1 included in the katrain/fonts directory.
-
------------------------------------------------------------------------------------------
-Aside from the above, the license for all other content in this repository is as follows:
------------------------------------------------------------------------------------------
-
-Copyright 2020 Sander Land and/or other authors of the content in this repository.
-(See 'CONTRIBUTIONS.md' file for a list of authors as well as other indirect contributors).
+Copyright 2020-2026 Sander Land and contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -37,4 +15,23 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FO
 DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
------------------------------------------------------------------------------------------
+Third-party components
+----------------------
+
+The Android build contains these separately licensed components:
+
+* A KataGo human-style model and code adapted from KataGo, copyright David J Wu
+  and contributors. KataGo is distributed under the MIT License:
+  https://github.com/lightvector/KataGo/blob/master/LICENSE
+
+* MNN Android runtime libraries, copyright Alibaba Group and contributors. MNN
+  is distributed under the Apache License 2.0:
+  https://github.com/alibaba/MNN/blob/master/LICENSE.txt
+
+* Flutter and its bundled runtime, copyright The Flutter Authors. Flutter is
+  distributed under the BSD 3-Clause License:
+  https://github.com/flutter/flutter/blob/master/LICENSE
+
+Flutter and the Android build tools include dependency license notices in the
+generated APK. The app icon and screenshots in this repository are original
+SHAPE artwork.

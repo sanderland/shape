@@ -1,0 +1,5 @@
+build/
+.dart_tool/
+.flutter-plugins*
+assets/*.onnx
+assets/*.mnn

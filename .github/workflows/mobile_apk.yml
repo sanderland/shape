@@ -1,0 +1,278 @@
+name: Mobile APK
+
+# Builds the Android app and attaches the APK to the run, so it can be
+# installed on a phone without anyone hand-uploading a binary.
+#
+# The 107 MB ONNX model is not in the repo. It is exported here from KataGo's
+# published b18c384nbt-humanv0.ckpt and cached, so only the first run (or a run
+# after the export scripts change) pays the ~300 MB download and torch install.
+
+on:
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'tools/onnx_export/**'
+      - '.github/workflows/mobile_apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  KATAGO_TAG: v1.17.2
+  KATAGO_COMMIT: 6a1fc5de9fc253723ac475a0683bf0b9d9b7bd19
+  CKPT_URL: https://github.com/lightvector/KataGo/releases/download/v1.15.0/b18c384nbt-humanv0.ckpt
+  CKPT_SHA256: 84b23476b56a73a775a0f09bad7d1c5c435690adb343aa851e80bf198c0c8b27
+  MODEL_NAME: b18c384nbt-humanv0.onnx
+  MNN_VERSION: 3.6.1
+  MNN_ANDROID_SHA256: 46dc7e86d45b8d4e957db81d2603e0b7f6c9ce9b84092ffdcee1b843cbfc9d71
+
+jobs:
+  model:
+    name: Export ONNX model
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Keyed on the export scripts: change how the model is built and it rebuilds.
+      - name: Cache exported model
+        id: cache
+        uses: actions/cache@v5
+        with:
+          path: out
+          key: humanv0-${{ env.KATAGO_TAG }}-mnn${{ env.MNN_VERSION }}-${{ hashFiles('tools/onnx_export/*.py', '.github/workflows/mobile_apk.yml') }}
+
+      - uses: actions/setup-python@v6
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          python-version: '3.12'
+
+      - name: Install export dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          pip install --quiet \
+            'torch==2.13.0' --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet 'numpy==2.5.2' 'onnx==1.22.0' \
+            'onnxruntime==1.29.0' 'packaging==26.0'
+          # MNN ships the converter used to produce the app's gameplay model.
+          pip install --quiet 'MNN==3.6.1'
+
+      - name: Fetch KataGo python package
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$KATAGO_TAG" https://github.com/lightvector/KataGo.git katago-src
+          [ "$(git -C katago-src rev-parse HEAD)" = "$KATAGO_COMMIT" ] || {
+            echo "KataGo tag no longer points to $KATAGO_COMMIT"
+            exit 1
+          }
+
+      - name: Download human-SL checkpoint
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p models
+          curl -fL --retry 3 -o models/b18c384nbt-humanv0.ckpt "$CKPT_URL"
+          echo "$CKPT_SHA256  models/b18c384nbt-humanv0.ckpt" | sha256sum --check -
+          # torch >=2.6 refuses this checkpoint until its defaultdicts are migrated.
+          PYTHONPATH="$PWD/katago-src/python" \
+            python katago-src/python/migrate_defaultdict_to_dict.py \
+              -checkpoint models/b18c384nbt-humanv0.ckpt
+
+      - name: Export ONNX and assets
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          PYTHONPATH: ${{ github.workspace }}/katago-src/python
+          SHAPE_MODEL_DIR: ${{ github.workspace }}/models
+          SHAPE_ONNX_OUT: ${{ github.workspace }}/out/b18c384nbt-humanv0.onnx
+          SHAPE_ASSETS_OUT: ${{ github.workspace }}/out
+          SHAPE_FIXTURES_OUT: ${{ github.workspace }}/out
+        run: |
+          mkdir -p out
+          cd tools/onnx_export
+          # --no-katago: no engine binary here, so gate onnx against torch instead.
+          python export_onnx.py --no-katago
+          python export_assets.py
+          # Featurizer fixtures, so the Dart port is checked against a model+featurizer
+          # pair generated together rather than whatever is committed.
+          python export_fixtures.py
+          # Convert the exported net to the MNN model used by the app.
+          mnnconvert -f ONNX --modelFile "$SHAPE_ONNX_OUT" \
+                     --MNNModel "$GITHUB_WORKSPACE/out/humanv0.mnn" --bizCode shape
+
+      - name: Show outputs
+        run: ls -la out
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: model
+          path: out/
+          retention-days: 1
+
+  apk:
+    name: Build APK
+    needs: model
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: model
+          path: app/assets
+
+      # MNN publishes prebuilt Android .so files but no Maven artifact, and the
+      # repo's .gitignore excludes *.so, so fetch them rather than committing
+      # binaries. MNN is what the net runs on; only the CPU backend is shipped,
+      # since OpenCL matched it and Vulkan crashed.
+      - name: Fetch MNN Android runtime
+        working-directory: app
+        run: |
+          pkg="mnn_${MNN_VERSION}_android_armv7_armv8_cpu_opencl_vulkan"
+          curl -sL --retry 3 -o mnn.zip \
+            "https://github.com/alibaba/MNN/releases/download/${MNN_VERSION}/${pkg}.zip"
+          echo "$MNN_ANDROID_SHA256  mnn.zip" | sha256sum --check -
+          unzip -q mnn.zip
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          for l in libMNN.so libMNN_Express.so libmnncore.so libc++_shared.so; do
+            cp "${pkg}/arm64-v8a/$l" android/app/src/main/jniLibs/arm64-v8a/
+          done
+          rm -rf mnn.zip "$pkg"
+          ls -la android/app/src/main/jniLibs/arm64-v8a
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.0'
+          cache: true
+
+      - name: Install dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: app
+        run: flutter analyze
+
+      # Checks the Dart metadata encoding against the exported KataGo reference.
+      - name: Test
+        working-directory: app
+        run: flutter test
+
+      # The ONNX is only the source the .mnn was converted from; shipping it would
+      # add 107MB to the APK for nothing.
+      - name: Drop the ONNX model
+        working-directory: app
+        run: rm -f assets/*.onnx
+
+      - name: Check the assets the app needs are present
+        working-directory: app
+        run: |
+          ls -la assets
+          missing=0
+          for f in humanv0.mnn position.bin reference.json \
+                   featurizer_fixtures.json; do
+            if [ ! -s "assets/$f" ]; then echo "MISSING: assets/$f"; missing=1; fi
+          done
+          [ "$missing" = 0 ] || {
+            echo "Refusing to build: the APK would ship without these, and the failure"
+            echo "would only show up as a runtime error on the phone."
+            exit 1
+          }
+
+      # Pull-request code never receives the production key. This key identifies
+      # only the preview artifact from this one run.
+      - name: Configure preview signing
+        if: github.event_name == 'pull_request'
+        run: |
+          keytool -genkeypair -noprompt \
+            -keystore "$RUNNER_TEMP/shape-preview.p12" -storetype PKCS12 \
+            -storepass preview-build -keypass preview-build -alias preview \
+            -keyalg RSA -keysize 3072 -validity 30 \
+            -dname "CN=SHAPE pull request preview"
+          echo "SHAPE_ANDROID_KEYSTORE=$RUNNER_TEMP/shape-preview.p12" >> "$GITHUB_ENV"
+          echo "SHAPE_ANDROID_STORE_PASSWORD=preview-build" >> "$GITHUB_ENV"
+          echo "SHAPE_ANDROID_KEY_ALIAS=preview" >> "$GITHUB_ENV"
+          echo "SHAPE_ANDROID_KEY_PASSWORD=preview-build" >> "$GITHUB_ENV"
+
+      - name: Require the trusted release branch
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          [ "$GITHUB_REF" = 'refs/heads/main' ] || {
+            echo "Production releases must run from main, not $GITHUB_REF"
+            exit 1
+          }
+
+      - name: Configure production signing
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for name in RELEASE_KEYSTORE_BASE64 RELEASE_STORE_PASSWORD \
+                      RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then echo "MISSING SECRET: $name"; missing=1; fi
+          done
+          [ "$missing" = 0 ] || exit 1
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" \
+            | base64 --decode > "$RUNNER_TEMP/shape-release.p12"
+          echo "SHAPE_ANDROID_KEYSTORE=$RUNNER_TEMP/shape-release.p12" >> "$GITHUB_ENV"
+          echo "SHAPE_ANDROID_STORE_PASSWORD=$RELEASE_STORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "SHAPE_ANDROID_KEY_ALIAS=$RELEASE_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "SHAPE_ANDROID_KEY_PASSWORD=$RELEASE_KEY_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Build release APK (arm64)
+        working-directory: app
+        run: flutter build apk --release --split-per-abi --target-platform=android-arm64
+
+      - name: Confirm the assets made it into the APK
+        working-directory: app
+        run: |
+          apk=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          unzip -l "$apk" | grep -q "flutter_assets/assets/humanv0.mnn" \
+            || { echo "MISSING FROM APK: humanv0.mnn"; exit 1; }
+          unzip -l "$apk" | grep -q "lib/arm64-v8a/libMNN.so" \
+            || { echo "MISSING FROM APK: libMNN.so"; exit 1; }
+          ls -la "$apk"
+
+      - uses: actions/upload-artifact@v6
+        id: upload
+        with:
+          name: shape-arm64-apk
+          path: app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          retention-days: 30
+
+      - name: Link the APK on the PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v8
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        with:
+          script: |
+            const marker = '<!-- goshape-apk -->';
+            const body = [
+              marker,
+              '### SHAPE for Android APK',
+              '',
+              `**[Download the APK](${process.env.ARTIFACT_URL})** (arm64-v8a, preview-signed)`,
+              '',
+              'Open that link on the phone while signed into GitHub, unzip, and install the `.apk`.',
+              'It needs no network and no permissions.',
+              '',
+              `Built from ${context.sha.substring(0, 7)}.`,
+            ].join('\n');
+            const {owner, repo} = context.repo;
+            const issue_number = context.issue.number;
+            const existing = (await github.rest.issues.listComments({owner, repo, issue_number}))
+              .data.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({owner, repo, comment_id: existing.id, body});
+            } else {
+              await github.rest.issues.createComment({owner, repo, issue_number, body});
+            }
