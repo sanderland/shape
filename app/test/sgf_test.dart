@@ -28,6 +28,7 @@ void main() {
       );
 
       expect(game.boardSize, 9);
+      expect(game.mode, GameMode.analyze);
       expect(game.rules.whiteKomi, 5.5);
       expect(game.cursor, 3);
       expect(game.line[1].isPass, isTrue);

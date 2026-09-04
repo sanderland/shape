@@ -13,7 +13,13 @@ import 'sgf.dart';
 
 /// Ranks offered, weakest first.
 const List<String> kRanks = [
-  'rank_20k', 'rank_15k', 'rank_10k', 'rank_8k', 'rank_6k', 'rank_5k', 'rank_4k',
+  'rank_20k',
+  'rank_15k',
+  'rank_10k',
+  'rank_8k',
+  'rank_6k',
+  'rank_5k',
+  'rank_4k',
   'rank_3k', 'rank_2k', 'rank_1k', 'rank_1d', 'rank_2d', 'rank_3d', 'rank_4d',
   'rank_5d', 'rank_6d', 'rank_7d', 'rank_8d', 'rank_9d',
   // Pro records by era. The net was trained on games from the year, so these play
@@ -95,6 +101,10 @@ enum MoveVerdict {
 /// How much of the post-move card to show. Independent of [HeatmapMode]: the
 /// heatmap tells you what to play *before* you move, this judges it after.
 enum FeedbackMode { off, mistakesOnly, all }
+
+/// Play is for a live game against the selected opponent. Analyze is for replay:
+/// either colour can be placed manually and every move can receive feedback.
+enum GameMode { play, analyze }
 
 /// Which policy, if any, to paint on the board before you move.
 ///
@@ -299,21 +309,26 @@ class ShapeGame extends ChangeNotifier {
 
   /// Moves continuing from here, so the board can show what has been explored.
   List<NextMove> get nextMoves => [
-        for (final c in current.children)
-          if (!c.move!.isPass)
-            NextMove(
-              pos.board.locX(c.move!.loc),
-              pos.board.locY(c.move!.loc),
-              feedbackFor(c)?.verdict,
-              identical(c, current.continuation),
-            ),
-      ];
+    for (final c in current.children)
+      if (!c.move!.isPass)
+        NextMove(
+          pos.board.locX(c.move!.loc),
+          pos.board.locY(c.move!.loc),
+          feedbackFor(c)?.verdict,
+          identical(c, current.continuation),
+        ),
+  ];
 
   String playerRank = 'rank_5k';
   String opponentRank = 'rank_1k';
   String targetRank = 'rank_2d';
 
   int humanColor = Board.black;
+
+  GameMode mode = GameMode.play;
+
+  /// There is no UI switch for this. Tests use it to construct a partial line;
+  /// normal play mode always leaves it true.
   bool autoplayOpponent = true;
 
   // Default to the least hand-holding that still teaches: no policy shown
@@ -324,11 +339,11 @@ class ShapeGame extends ChangeNotifier {
 
   /// Profile whose policy the board paints, or null when the heatmap is off.
   String? get heatmapProfile => switch (heatmapMode) {
-        HeatmapMode.off => null,
-        HeatmapMode.yourRank => playerRank,
-        HeatmapMode.target => targetRank,
-        HeatmapMode.pro => kReferenceProfile,
-      };
+    HeatmapMode.off => null,
+    HeatmapMode.yourRank => playerRank,
+    HeatmapMode.target => targetRank,
+    HeatmapMode.pro => kReferenceProfile,
+  };
 
   bool get wantsFeedback => feedbackMode != FeedbackMode.off;
 
@@ -357,7 +372,10 @@ class ShapeGame extends ChangeNotifier {
   /// Reconstructing this from the current path keeps browsing and variations from
   /// changing hidden counters. Once shown, it stays until twice the bar.
   double? get lowWinProbability {
-    if (!showLowWinNote || gameOver || _nextPlayerAt(current) != humanColor) {
+    if (mode != GameMode.play ||
+        !showLowWinNote ||
+        gameOver ||
+        _nextPlayerAt(current) != humanColor) {
       return null;
     }
 
@@ -407,6 +425,7 @@ class ShapeGame extends ChangeNotifier {
 
   bool get hasEngine => engine != null && !_engineFailed;
   MoveFeedback? feedback;
+
   /// The last analysis call: how long it took and how many net evaluations it
   /// covered. One position needs one evaluation per profile, so the total on its
   /// own is not comparable between moves -- three profiles at 100ms looks like a
@@ -417,14 +436,18 @@ class ShapeGame extends ChangeNotifier {
   int get msPerEval => analysisEvals == 0 ? 0 : analysisMs ~/ analysisEvals;
 
   ShapeGame(this.engine, {this.boardSize = 19, math.Random? random})
-      : rng = random ?? math.Random() {
+    : rng = random ?? math.Random() {
     current = root;
     pos = GoPosition(boardSize, rules);
   }
 
   /// Would autoplay move on from where we are now?
   bool get _autoReplyWouldFire =>
-      hasEngine && autoplayOpponent && !gameOver && pos.nextPlayer != humanColor;
+      mode == GameMode.play &&
+      hasEngine &&
+      autoplayOpponent &&
+      !gameOver &&
+      pos.nextPlayer != humanColor;
 
   /// Profiles to evaluate at the current position, kept as small as its role
   /// allows: each one is a full net call (~250ms on a phone).
@@ -447,7 +470,7 @@ class ShapeGame extends ChangeNotifier {
     if (wantsFeedback) needed.addAll([playerRank, targetRank]);
     // The win estimate is read at your rank, which feedback already evaluates;
     // this only costs an extra call when the note is on and feedback is off.
-    if (showLowWinNote) needed.add(playerRank);
+    if (mode == GameMode.play && showLowWinNote) needed.add(playerRank);
     final hm = heatmapProfile;
     if (hm != null) needed.add(hm);
     return needed.toList();
@@ -461,7 +484,10 @@ class ShapeGame extends ChangeNotifier {
   /// Easy to miss otherwise: a pass puts no stone on the board.
   bool get opponentJustPassed {
     final m = current.move;
-    return m != null && m.isPass && m.pla != humanColor;
+    return mode == GameMode.play &&
+        m != null &&
+        m.isPass &&
+        m.pla != humanColor;
   }
 
   /// Score estimate for the current position in points for Black, or null if it
@@ -479,6 +505,8 @@ class ShapeGame extends ChangeNotifier {
   bool get canGoBack => !current.isRoot;
   bool get canGoForward => current.children.isNotEmpty;
   bool get humanToPlay => !hasEngine || pos.nextPlayer == humanColor;
+  bool get canPlace =>
+      !busy && !gameOver && (mode == GameMode.analyze || humanToPlay);
 
   bool get gameOver {
     final prev = current.parent?.move;
@@ -542,8 +570,9 @@ class ShapeGame extends ChangeNotifier {
     final before = moveNode.parent?.analyses[kReferenceProfile];
     final after = moveNode.analyses[kReferenceProfile];
     if (before == null || after == null) return null;
-    final offset =
-        (pos.rules.scoringRule == 'SCORING_TERRITORY' && !wasPass) ? 1.0 : 0.0;
+    final offset = (pos.rules.scoringRule == 'SCORING_TERRITORY' && !wasPass)
+        ? 1.0
+        : 0.0;
     return before.lead + after.lead - offset;
   }
 
@@ -557,6 +586,17 @@ class ShapeGame extends ChangeNotifier {
   /// screen. At the tip nothing follows yet, so it falls back, which is what keeps
   /// the card filled during your turn.
   GameNode? get describedMove {
+    if (mode == GameMode.analyze) {
+      if (current.children.isNotEmpty) {
+        final next = current.continuation;
+        if (!next.move!.isPass) return next;
+      }
+      return current.move?.isPass == true
+          ? null
+          : current.move == null
+          ? null
+          : current;
+    }
     if (current.children.isNotEmpty) {
       final c = current.continuation;
       if (c.move!.pla == humanColor && !c.move!.isPass) return c;
@@ -587,12 +627,12 @@ class ShapeGame extends ChangeNotifier {
 
   /// How the move arriving at [node] looks, from analyses already cached.
   ///
-  /// Returns null when it is not yours, was a pass, or has not been evaluated --
-  /// this reads the cache and never triggers work, so it is safe to call for every
-  /// node in the tree.
+  /// In play mode this describes only your moves. In analyze mode it describes
+  /// either colour. This reads the cache and never triggers work.
   MoveFeedback? feedbackFor(GameNode node) {
     final move = node.move;
-    if (move == null || move.pla != humanColor || move.isPass) return null;
+    if (move == null || move.isPass) return null;
+    if (mode == GameMode.play && move.pla != humanColor) return null;
 
     final before = node.parent?.analyses;
     final player = before?[playerRank];
@@ -623,8 +663,10 @@ class ShapeGame extends ChangeNotifier {
   /// move played while feedback was on. Moves never evaluated are skipped rather
   /// than evaluated now, because scanning a whole game would cost a few hundred
   /// milliseconds per move and freeze the button that asked for it.
-  List<GameNode> get knownMistakes =>
-      [for (final n in currentLine) if (feedbackFor(n)?.isMistake ?? false) n];
+  List<GameNode> get knownMistakes => [
+    for (final n in currentLine)
+      if (feedbackFor(n)?.isMistake ?? false) n,
+  ];
 
   /// Where [goToMistake] would put the cursor for [mistake].
   int _landingFor(GameNode mistake) => mistake.depth - 1;
@@ -704,7 +746,7 @@ class ShapeGame extends ChangeNotifier {
 
   Future<void> _maybeOpponentMove() async {
     if (!hasEngine) return;
-    if (!autoplayOpponent || gameOver || humanToPlay || busy) return;
+    if (!_autoReplyWouldFire || busy) return;
 
     // Follow a reply already in the tree instead of sampling another variation.
     if (!atTip) {
@@ -748,9 +790,11 @@ class ShapeGame extends ChangeNotifier {
     if (!keepReview) _reviewReturn = null;
     // Remember the branch being left, so Back followed by Forward returns to it
     // and the feedback card keeps describing the same continuation.
-    for (var n = current;
-        n.parent != null && n.depth > target.depth;
-        n = n.parent!) {
+    for (
+      var n = current;
+      n.parent != null && n.depth > target.depth;
+      n = n.parent!
+    ) {
       n.parent!.selectedChild = n;
     }
     busy = true;
@@ -830,8 +874,8 @@ class ShapeGame extends ChangeNotifier {
   Future<void> goFirst() => _goToNode(root);
   Future<void> goLast() => _goToNode(current.endOfMainLine);
 
-  /// Step one exchange when an engine is replying, otherwise one move.
-  int get _navigationStep => hasEngine && autoplayOpponent ? 2 : 1;
+  /// Play follows one whole exchange. Analyze follows each recorded move.
+  int get _navigationStep => mode == GameMode.play ? 2 : 1;
   Future<void> goPrev() => _goToNode(_up(current, _navigationStep));
   Future<void> goNext() => _goToNode(_down(current, _navigationStep));
 
@@ -848,6 +892,7 @@ class ShapeGame extends ChangeNotifier {
       error = null;
       boardSize = size ?? boardSize;
       humanColor = asColor ?? humanColor;
+      mode = GameMode.play;
       rules = Rules.japanese;
       pos = GoPosition(boardSize, rules);
       await _analyzeCurrent(autoReply: _autoReplyWouldFire);
@@ -902,6 +947,20 @@ class ShapeGame extends ChangeNotifier {
     await _refresh();
   }
 
+  /// Switch between a live game and move-by-move review.
+  ///
+  /// The cursor stays put. If it is the opponent's turn when play resumes, the
+  /// move at the cursor was yours and the opponent replies. If it is your turn,
+  /// the recorded opponent move remains the last move and you choose what comes
+  /// next. That avoids inventing a jump when entering play from an SGF.
+  Future<void> setMode(GameMode value) async {
+    if (mode == value) return;
+    mode = value;
+    _reviewReturn = null;
+    await _refresh();
+    if (mode == GameMode.play) await _maybeOpponentMove();
+  }
+
   /// A setting changed while something else was already analysing.
   ///
   /// The controls stay live during inference, so a second choice can land while
@@ -937,7 +996,11 @@ class ShapeGame extends ChangeNotifier {
     if (_refreshQueued) await _refresh();
   }
 
-  Future<void> setRanks({String? player, String? opponent, String? target}) async {
+  Future<void> setRanks({
+    String? player,
+    String? opponent,
+    String? target,
+  }) async {
     playerRank = player ?? playerRank;
     opponentRank = opponent ?? opponentRank;
     targetRank = target ?? targetRank;
@@ -956,6 +1019,7 @@ class ShapeGame extends ChangeNotifier {
       boardSize = imported.size;
       rules = imported.rules;
       root = imported.root;
+      mode = GameMode.analyze;
       current = root;
       final targetMove = atMove ?? root.endOfMainLine.depth;
       while (current.children.isNotEmpty && current.depth < targetMove) {
@@ -986,7 +1050,8 @@ class ShapeGame extends ChangeNotifier {
     final size = int.tryParse(sizeText);
     if (size == null || !kBoardSizes.contains(size)) {
       throw SgfFormatException(
-          'Only 9x9, 13x13, and 19x19 SGFs are supported, not SZ[$sizeText]');
+        'Only 9x9, 13x13, and 19x19 SGFs are supported, not SZ[$sizeText]',
+      );
     }
 
     final komiText = sgfRoot.value('KM') ?? '6.5';
@@ -1001,13 +1066,15 @@ class ShapeGame extends ChangeNotifier {
     void addNode(SgfNode sourceNode, GameNode parent) {
       if (sourceNode.properties.containsKey('AE')) {
         throw const SgfFormatException(
-            'SGF setup removals cannot be interpreted as moves');
+          'SGF setup removals cannot be interpreted as moves',
+        );
       }
       final black = sourceNode.properties['B'];
       final white = sourceNode.properties['W'];
       if (black != null && white != null) {
         throw const SgfFormatException(
-            'An SGF node cannot contain both B and W moves');
+          'An SGF node cannot contain both B and W moves',
+        );
       }
 
       var nextParent = parent;
@@ -1044,7 +1111,8 @@ class ShapeGame extends ChangeNotifier {
       if (values != null) {
         if (values.length != 1) {
           throw const SgfFormatException(
-              'An SGF move must have exactly one value');
+            'An SGF move must have exactly one value',
+          );
         }
         addMove(black != null ? Board.black : Board.white, values.single);
       }
@@ -1098,7 +1166,8 @@ class ShapeGame extends ChangeNotifier {
     final y = value.codeUnitAt(1) - 97;
     if (x < 0 || y < 0 || x >= size || y >= size) {
       throw SgfFormatException(
-          'Move [$value] is outside the ${size}x$size board');
+        'Move [$value] is outside the ${size}x$size board',
+      );
     }
     return board.loc(x, y);
   }
@@ -1109,9 +1178,14 @@ class ShapeGame extends ChangeNotifier {
         ? rules.whiteKomi.toInt().toString()
         : rules.whiteKomi.toString();
     final b = StringBuffer(
-        '(;GM[1]FF[4]CA[UTF-8]SZ[$boardSize]KM[$komi]RU[Japanese]');
-    b.write('PB[${humanColor == Board.black ? rankLabel(playerRank) : rankLabel(opponentRank)}]');
-    b.write('PW[${humanColor == Board.white ? rankLabel(playerRank) : rankLabel(opponentRank)}]');
+      '(;GM[1]FF[4]CA[UTF-8]SZ[$boardSize]KM[$komi]RU[Japanese]',
+    );
+    b.write(
+      'PB[${humanColor == Board.black ? rankLabel(playerRank) : rankLabel(opponentRank)}]',
+    );
+    b.write(
+      'PW[${humanColor == Board.white ? rankLabel(playerRank) : rankLabel(opponentRank)}]',
+    );
     _writeSgfChildren(b, root);
     b.write(')');
     return b.toString();
@@ -1128,7 +1202,10 @@ class ShapeGame extends ChangeNotifier {
         continue;
       }
       final selected = n.continuation;
-      final ordered = [selected, ...n.children.where((c) => !identical(c, selected))];
+      final ordered = [
+        selected,
+        ...n.children.where((c) => !identical(c, selected)),
+      ];
       for (final c in ordered) {
         b.write('(');
         b.write(_sgfMove(c.move!));

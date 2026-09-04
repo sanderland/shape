@@ -14,6 +14,8 @@ does not need a network connection or account.
 - a rough score estimate that can be hidden while you play
 - a move tree: playing from history creates a variation, and explored next moves
   remain marked on the board
+- Play mode for full turns against the opponent, and Analyze mode for reviewing
+  either colour one move at a time
 - SGF import and export through Android's document picker
 - review and previous/next-mistake navigation
 - a board-only fallback when the model cannot run
@@ -27,9 +29,12 @@ Aim with your finger and release to play. The Feedback buttons control what the
 app says after a move. The Policy buttons show likely moves before you play. The
 eye button shows or hides the score estimate.
 
-The single arrows browse the current line. The double arrows jump between known
-mistakes. The bulb shows what your target rank might have played. Playing from an
-earlier position adds a variation rather than deleting the later moves.
+Play auto-replies and the single arrows browse one full turn. Analyze never
+auto-plays, lets you enter either colour, and browses one move at a time. SGF
+files open in Analyze; switching back to Play continues from the position you are
+viewing. The double arrows jump between known mistakes. The bulb shows what your
+target rank might have played. Playing from an earlier position adds a variation
+rather than deleting the later moves.
 
 Pass, new game, SGF open/save, settings, and a short help screen are in the menu.
 

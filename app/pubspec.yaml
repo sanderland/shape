@@ -1,10 +1,10 @@
 name: goshape
 description: "SHAPE for Android: play Go against a human-like opponent and see how each move reads at your rank."
 publish_to: 'none'
-version: 0.5.0+5
+version: 0.6.0+6
 
 environment:
-  sdk: ^3.9.0
+  sdk: ^3.13.0
 
 dependencies:
   flutter:
@@ -14,7 +14,7 @@ dev_dependencies:
   flutter_launcher_icons: ^0.14.1
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
 
 flutter:
   uses-material-design: true

@@ -10,30 +10,30 @@ MoveFeedback fb({
   required double playerProb,
   required double targetProb,
   required double? pointsLost,
-}) =>
-    MoveFeedback(
-      x: 3,
-      y: 15,
-      playerProb: playerProb,
-      playerRel: 1.0,
-      targetProb: targetProb,
-      targetRel: 0.5,
-      moveLikeTarget: posteriorLikeTarget(playerProb, targetProb),
-      pointsLost: pointsLost,
-    );
+}) => MoveFeedback(
+  x: 3,
+  y: 15,
+  playerProb: playerProb,
+  playerRel: 1.0,
+  targetProb: targetProb,
+  targetRel: 0.5,
+  moveLikeTarget: posteriorLikeTarget(playerProb, targetProb),
+  pointsLost: pointsLost,
+);
 
 Future<void> show(WidgetTester tester, MoveFeedback? f) => tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: FeedbackCard(
-            feedback: f,
-            playerRank: 'rank_5k',
-            targetRank: 'rank_2d',
-            boardSize: 19,
-          ),
-        ),
+  MaterialApp(
+    home: Scaffold(
+      body: FeedbackCard(
+        feedback: f,
+        playerRank: 'rank_5k',
+        targetRank: 'rank_2d',
+        boardSize: 19,
+        analyzing: false,
       ),
-    );
+    ),
+  ),
+);
 
 void main() {
   testWidgets('a mistake leads with what it cost', (tester) async {
@@ -43,15 +43,23 @@ void main() {
     expect(find.textContaining('pts'), findsNothing);
   });
 
-  testWidgets('a costly move the target plays says both things at once',
-      (tester) async {
+  testWidgets('a costly move the target plays says both things at once', (
+    tester,
+  ) async {
     await show(tester, fb(playerProb: 0.10, targetProb: 0.30, pointsLost: 2.3));
-    expect(find.text('D4 · Lost 2.3 points, but 2d plays it too'), findsOneWidget);
+    expect(
+      find.text('D4 · Lost 2.3 points, but 2d plays it too'),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('the excuse is dropped when the target barely plays it',
-      (tester) async {
-    await show(tester, fb(playerProb: 0.06, targetProb: 0.016, pointsLost: 2.0));
+  testWidgets('the excuse is dropped when the target barely plays it', (
+    tester,
+  ) async {
+    await show(
+      tester,
+      fb(playerProb: 0.06, targetProb: 0.016, pointsLost: 2.0),
+    );
     expect(find.text('D4 · Lost 2.0 points'), findsOneWidget);
     expect(find.textContaining('plays it too'), findsNothing);
   });
@@ -70,9 +78,13 @@ void main() {
     expect(find.textContaining('Typical'), findsNothing);
   });
 
-  testWidgets('a move neither rank plays is called rare, not typical',
-      (tester) async {
-    await show(tester, fb(playerProb: 0.002, targetProb: 0.003, pointsLost: 0.1));
+  testWidgets('a move neither rank plays is called rare, not typical', (
+    tester,
+  ) async {
+    await show(
+      tester,
+      fb(playerProb: 0.002, targetProb: 0.003, pointsLost: 0.1),
+    );
     expect(find.text('D4 · Rare at both ranks'), findsOneWidget);
   });
 
@@ -85,10 +97,14 @@ void main() {
     expect(find.textContaining('Looks like'), findsNothing);
   });
 
-  testWidgets('the empty state says what will appear, not what Go is',
-      (tester) async {
+  testWidgets('the empty state says what will appear, not what Go is', (
+    tester,
+  ) async {
     await show(tester, null);
-    expect(find.textContaining('Feedback appears here after you move'), findsOneWidget);
+    expect(
+      find.textContaining('Feedback appears here after you move'),
+      findsOneWidget,
+    );
     expect(find.textContaining('Welcome'), findsNothing);
   });
 
@@ -101,19 +117,23 @@ void main() {
     expect(colors.length, MoveVerdict.values.length);
   });
 
-  testWidgets('the card is headed in the same colour the board rings with',
-      (tester) async {
+  testWidgets('the card is headed in the same colour the board rings with', (
+    tester,
+  ) async {
     final f = fb(playerProb: 0.20, targetProb: 0.01, pointsLost: 3.2);
     await show(tester, f);
     final headline = tester.widget<Text>(find.text('D4 · Lost 3.2 points'));
     expect(headline.style?.color, verdictColor(f.verdict));
   });
 
-  testWidgets('the low-win note reports an estimate, not a decided game',
-      (tester) async {
-    await tester.pumpWidget(const MaterialApp(
-      home: Scaffold(body: LowWinNotice(probability: 0.034, rank: 'rank_5k')),
-    ));
+  testWidgets('the low-win note reports an estimate, not a decided game', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: LowWinNotice(probability: 0.034, rank: 'rank_5k')),
+      ),
+    );
     expect(find.textContaining('3% win chance at 5k'), findsOneWidget);
     expect(find.textContaining('closer practice position'), findsOneWidget);
     expect(find.textContaining('decided'), findsNothing);
@@ -125,17 +145,18 @@ Future<void> showNotice(
   bool gameOver = false,
   bool opponentPassed = false,
   double? score,
-}) =>
-    tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: GameNotice(
-          gameOver: gameOver,
-          opponentPassed: opponentPassed,
-          opponentRank: 'rank_1k',
-          scoreLeadForBlack: score,
-        ),
+}) => tester.pumpWidget(
+  MaterialApp(
+    home: Scaffold(
+      body: GameNotice(
+        gameOver: gameOver,
+        opponentPassed: opponentPassed,
+        opponentRank: 'rank_1k',
+        scoreLeadForBlack: score,
       ),
-    ));
+    ),
+  ),
+);
 
 void noticeTests() {
   test('score is labelled by who is ahead, not by who is to move', () {
@@ -145,8 +166,9 @@ void noticeTests() {
     expect(GameNotice.scoreLabel(null), isNull);
   });
 
-  testWidgets('a pass is announced, because it puts no stone on the board',
-      (tester) async {
+  testWidgets('a pass is announced, because it puts no stone on the board', (
+    tester,
+  ) async {
     await showNotice(tester, opponentPassed: true);
     expect(find.text('1k passed'), findsOneWidget);
     expect(find.text('Pass again to end the game.'), findsOneWidget);
@@ -159,14 +181,16 @@ void noticeTests() {
     expect(find.textContaining('without search'), findsOneWidget);
   });
 
-  testWidgets('game over without an estimate still says the game is over',
-      (tester) async {
+  testWidgets('game over without an estimate still says the game is over', (
+    tester,
+  ) async {
     await showNotice(tester, gameOver: true, score: null);
     expect(find.text('Game over'), findsOneWidget);
   });
 
-  testWidgets('nothing is shown when there is nothing to announce',
-      (tester) async {
+  testWidgets('nothing is shown when there is nothing to announce', (
+    tester,
+  ) async {
     await showNotice(tester);
     expect(find.byType(Card), findsNothing);
   });

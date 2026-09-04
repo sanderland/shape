@@ -20,8 +20,14 @@ void main() {
       final pos = GoPosition(5, rules);
       final b = pos.board;
       for (final (x, y) in [
-        (0, 2), (1, 1), (1, 3), (2, 1),
-        (2, 3), (4, 2), (3, 1), (3, 3),
+        (0, 2),
+        (1, 1),
+        (1, 3),
+        (2, 1),
+        (2, 3),
+        (4, 2),
+        (3, 1),
+        (3, 3),
       ]) {
         b.addUnsafe(Board.white, b.loc(x, y));
       }
@@ -32,8 +38,11 @@ void main() {
 
     final japanese = surrounded(Rules.japanese);
     final center = japanese.board.loc(2, 2);
-    expect(japanese.board.wouldBeLegal(Board.black, center), isTrue,
-        reason: 'the low-level board intentionally permits group self-capture');
+    expect(
+      japanese.board.wouldBeLegal(Board.black, center),
+      isTrue,
+      reason: 'the low-level board intentionally permits group self-capture',
+    );
     expect(japanese.wouldBeLegal(Board.black, center), isFalse);
 
     final trompTaylor = surrounded(Rules.trompTaylor);
@@ -45,8 +54,9 @@ void main() {
     expect(trompTaylor.board.board[trompTaylor.board.loc(3, 2)], Board.empty);
   });
 
-  final raw = jsonDecode(File('assets/featurizer_fixtures.json').readAsStringSync())
-      as Map<String, dynamic>;
+  final raw = jsonDecode(
+    File('assets/featurizer_fixtures.json').readAsStringSync(),
+  ) as Map<String, dynamic>;
   final posLen = raw['posLen'] as int;
   final cases = (raw['cases'] as List).cast<Map<String, dynamic>>();
   final features = Features(posLen);
@@ -54,8 +64,16 @@ void main() {
   test('fixture file covers the awkward cases', () {
     expect(cases.length, greaterThanOrEqualTo(15));
     final names = cases.map((c) => c['name'] as String).toList();
-    expect(names.any((n) => n.startsWith('ko')), isTrue, reason: 'need a ko fixture');
-    expect(names.any((n) => n.contains('pass')), isTrue, reason: 'need a pass fixture');
+    expect(
+      names.any((n) => n.startsWith('ko')),
+      isTrue,
+      reason: 'need a ko fixture',
+    );
+    expect(
+      names.any((n) => n.contains('pass')),
+      isTrue,
+      reason: 'need a pass fixture',
+    );
     expect(cases.map((c) => c['boardSize']).toSet().length, greaterThan(1));
   });
 
@@ -78,25 +96,36 @@ void main() {
     // Area scoring needs pass-alive, which is deliberately not ported; the featurizer
     // must refuse loudly rather than emit zeroed area planes.
     if (ruleset == 'chinese') {
-      test('$name (area scoring) throws rather than emitting wrong features', () {
-        final pos = build(c);
-        expect(() => features.fillRowFeatures(pos), throwsUnimplementedError);
-      });
+      test(
+        '$name (area scoring) throws rather than emitting wrong features',
+        () {
+          final pos = build(c);
+          expect(() => features.fillRowFeatures(pos), throwsUnimplementedError);
+        },
+      );
       continue;
     }
 
     test('features match KataGo: $name', () {
       final pos = build(c);
 
-      final expectedNextPlayer = c['nextPlayer'] == 'B' ? Board.black : Board.white;
+      final expectedNextPlayer = c['nextPlayer'] == 'B'
+          ? Board.black
+          : Board.white;
       expect(pos.nextPlayer, expectedNextPlayer, reason: 'next player');
 
       final result = features.fillRowFeatures(pos);
       final expectedBin = base64Decode(c['binB64'] as String);
-      final expectedGlobal = (c['global'] as List).map((e) => (e as num).toDouble()).toList();
+      final expectedGlobal = (c['global'] as List)
+          .map((e) => (e as num).toDouble())
+          .toList();
 
       expect(result.bin.length, expectedBin.length, reason: 'bin length');
-      expect(result.global.length, expectedGlobal.length, reason: 'global length');
+      expect(
+        result.global.length,
+        expectedGlobal.length,
+        reason: 'global length',
+      );
 
       // Report the first mismatch as plane/x/y -- a raw index is useless to debug.
       final area = posLen * posLen;
@@ -104,14 +133,19 @@ void main() {
         if (result.bin[i] != expectedBin[i].toDouble()) {
           final plane = i ~/ area;
           final p = i % area;
-          fail('bin mismatch in $name: plane $plane at (x=${p % posLen}, y=${p ~/ posLen}) '
-              'got ${result.bin[i]} want ${expectedBin[i]}');
+          fail(
+            'bin mismatch in $name: plane $plane at (x=${p % posLen}, y=${p ~/ posLen}) '
+            'got ${result.bin[i]} want ${expectedBin[i]}',
+          );
         }
       }
 
       for (var i = 0; i < expectedGlobal.length; i++) {
-        expect(result.global[i], closeTo(expectedGlobal[i], 1e-6),
-            reason: 'global[$i] in $name');
+        expect(
+          result.global[i],
+          closeTo(expectedGlobal[i], 1e-6),
+          reason: 'global[$i] in $name',
+        );
       }
     });
   }
@@ -125,7 +159,13 @@ void main() {
       pos.play(Board.black, gtpToLoc('A9', b)); // filler, undone below
       pos.undo();
     }
-    expect(pos.board.wouldBeLegal(Board.black, gtpToLoc('D4', pos.board)), isFalse);
-    expect(pos.board.wouldBeLegal(Board.white, gtpToLoc('D4', pos.board)), isTrue);
+    expect(
+      pos.board.wouldBeLegal(Board.black, gtpToLoc('D4', pos.board)),
+      isFalse,
+    );
+    expect(
+      pos.board.wouldBeLegal(Board.white, gtpToLoc('D4', pos.board)),
+      isTrue,
+    );
   });
 }

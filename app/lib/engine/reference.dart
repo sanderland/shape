@@ -53,15 +53,21 @@ class ReferencePosition {
   static Future<ReferencePosition> load() async {
     final raw = await rootBundle.load('assets/position.bin');
     const binLen = kNumBinFeatures * 19 * 19;
-    final all = raw.buffer.asFloat32List(raw.offsetInBytes, binLen + kNumGlobalFeatures);
-    final ref =
-        jsonDecode(await rootBundle.loadString('assets/reference.json')) as Map<String, dynamic>;
+    final all = raw.buffer.asFloat32List(
+      raw.offsetInBytes,
+      binLen + kNumGlobalFeatures,
+    );
+    final ref = jsonDecode(
+      await rootBundle.loadString('assets/reference.json'),
+    ) as Map<String, dynamic>;
     final p = (ref['profiles'] as Map)[profile] as Map<String, dynamic>;
     final top = (p['top'] as List).cast<Map<String, dynamic>>();
     return ReferencePosition(
       Float32List.fromList(all.sublist(0, binLen)),
       Float32List.fromList(all.sublist(binLen)),
-      Float32List.fromList((p['meta'] as List).map((e) => (e as num).toDouble()).toList()),
+      Float32List.fromList(
+        (p['meta'] as List).map((e) => (e as num).toDouble()).toList(),
+      ),
       top.first['idx'] as int,
       {for (final e in top) e['idx'] as int: (e['p'] as num).toDouble()},
     );

@@ -110,7 +110,10 @@ class MnnRunner implements NetRunner {
     final dir = await _channel.invokeMethod<String>('cacheDir');
     final file = File('$dir/${kMnnAsset.split('/').last}');
     final data = await rootBundle.load(kMnnAsset);
-    final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    final bytes = data.buffer.asUint8List(
+      data.offsetInBytes,
+      data.lengthInBytes,
+    );
 
     // Written to a temp file and renamed, so a partial write can never appear at
     // the destination and the length is enough to tell a stale copy from a current
@@ -125,7 +128,11 @@ class MnnRunner implements NetRunner {
   }
 
   @override
-  Future<NetOutputs> run(Float32List bin, Float32List global, Float32List meta) async {
+  Future<NetOutputs> run(
+    Float32List bin,
+    Float32List global,
+    Float32List meta,
+  ) async {
     final out = await _channel.invokeMapMethod<String, Object?>('run', {
       'bin': bin,
       'global': global,

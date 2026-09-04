@@ -18,13 +18,20 @@ class BoardGeometry {
   /// [origin] is the top-left intersection, placed so the margins around the grid
   /// are equal.
   BoardGeometry(Size canvas, this.size)
-      : cell = math.min(canvas.width, canvas.height) / (size + 1),
-        origin = Offset(
-          (canvas.width - (size - 1) * (math.min(canvas.width, canvas.height) / (size + 1))) / 2,
-          (canvas.height - (size - 1) * (math.min(canvas.width, canvas.height) / (size + 1))) / 2,
-        );
+    : cell = math.min(canvas.width, canvas.height) / (size + 1),
+      origin = Offset(
+        (canvas.width -
+                (size - 1) *
+                    (math.min(canvas.width, canvas.height) / (size + 1))) /
+            2,
+        (canvas.height -
+                (size - 1) *
+                    (math.min(canvas.width, canvas.height) / (size + 1))) /
+            2,
+      );
 
-  Offset point(int x, int y) => Offset(origin.dx + x * cell, origin.dy + y * cell);
+  Offset point(int x, int y) =>
+      Offset(origin.dx + x * cell, origin.dy + y * cell);
 
   /// Nearest intersection, clamped to the board.
   ///
@@ -32,9 +39,9 @@ class BoardGeometry {
   /// crosshair should stay on the nearest line when the finger strays into the
   /// margin, not blink out.
   (int, int) nearest(Offset local) => (
-        ((local.dx - origin.dx) / cell).round().clamp(0, size - 1),
-        ((local.dy - origin.dy) / cell).round().clamp(0, size - 1),
-      );
+    ((local.dx - origin.dx) / cell).round().clamp(0, size - 1),
+    ((local.dy - origin.dy) / cell).round().clamp(0, size - 1),
+  );
 }
 
 /// How many heatmap moves to paint; more would be unreadable noise.
@@ -82,7 +89,10 @@ class BoardPainter extends CustomPainter {
     final g = BoardGeometry(size, n);
     final cell = g.cell;
 
-    canvas.drawRect(Offset.zero & size, Paint()..color = const Color(0xFFD2B48C));
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = const Color(0xFFD2B48C),
+    );
 
     final line = Paint()
       ..color = Colors.black87
@@ -95,10 +105,10 @@ class BoardPainter extends CustomPainter {
     final starCoords = n == 19
         ? [3, 9, 15]
         : n == 13
-            ? [3, 6, 9]
-            : n == 9
-                ? [2, 4, 6]
-                : <int>[];
+        ? [3, 6, 9]
+        : n == 9
+        ? [2, 4, 6]
+        : <int>[];
     final star = Paint()..color = Colors.black87;
     for (final y in starCoords) {
       for (final x in starCoords) {
@@ -115,8 +125,9 @@ class BoardPainter extends CustomPainter {
           if (h.isLegalAt(x, y)) idx.add(y * n + x);
         }
       }
-      idx.sort((a, b) =>
-          h.probAt(b % n, b ~/ n).compareTo(h.probAt(a % n, a ~/ n)));
+      idx.sort(
+        (a, b) => h.probAt(b % n, b ~/ n).compareTo(h.probAt(a % n, a ~/ n)),
+      );
       for (final i in idx.take(_kHeatmapTopN)) {
         final x = i % n, y = i ~/ n;
         final p = h.probAt(x, y);
@@ -129,12 +140,20 @@ class BoardPainter extends CustomPainter {
             Radius.circular(cell * 0.08),
           ),
           Paint()
-            ..color = Color.lerp(const Color(0xFF7FD98C), const Color(0xFF0B6E2E), rel)!
-                .withValues(alpha: 0.5 + 0.4 * rel),
+            ..color = Color.lerp(
+              const Color(0xFF7FD98C),
+              const Color(0xFF0B6E2E),
+              rel,
+            )!.withValues(alpha: 0.5 + 0.4 * rel),
         );
         if (rel > 0.22) {
-          _text(canvas, g.point(x, y), (p * 100).toStringAsFixed(p >= 0.095 ? 0 : 1),
-              cell * 0.32, Colors.white);
+          _text(
+            canvas,
+            g.point(x, y),
+            (p * 100).toStringAsFixed(p >= 0.095 ? 0 : 1),
+            cell * 0.32,
+            Colors.white,
+          );
         }
       }
     }
@@ -144,11 +163,18 @@ class BoardPainter extends CustomPainter {
         final s = board.board[board.loc(x, y)];
         if (s == Board.empty || s == Board.wall) continue;
         final c = g.point(x, y);
-        canvas.drawCircle(c, cell * 0.47, Paint()..color = Colors.black.withValues(alpha: 0.22));
+        canvas.drawCircle(
+          c,
+          cell * 0.47,
+          Paint()..color = Colors.black.withValues(alpha: 0.22),
+        );
         canvas.drawCircle(
           c,
           cell * 0.46,
-          Paint()..color = s == Board.black ? const Color(0xFF1A1A1A) : const Color(0xFFF7F7F7),
+          Paint()
+            ..color = s == Board.black
+                ? const Color(0xFF1A1A1A)
+                : const Color(0xFFF7F7F7),
         );
       }
     }
@@ -202,18 +228,25 @@ class BoardPainter extends CustomPainter {
         // this they were hard to pick out against the grid.
         ..strokeWidth = math.max(3, cell * 0.14);
       canvas.drawLine(
-          Offset(g.point(0, 0).dx, at.dy), Offset(g.point(n - 1, 0).dx, at.dy), guides);
+        Offset(g.point(0, 0).dx, at.dy),
+        Offset(g.point(n - 1, 0).dx, at.dy),
+        guides,
+      );
       canvas.drawLine(
-          Offset(at.dx, g.point(0, 0).dy), Offset(at.dx, g.point(0, n - 1).dy), guides);
+        Offset(at.dx, g.point(0, 0).dy),
+        Offset(at.dx, g.point(0, n - 1).dy),
+        guides,
+      );
 
       canvas.drawCircle(
         at,
         cell * 0.46,
         Paint()
-          ..color = (crosshairPlayer == Board.black
-                  ? const Color(0xFF1A1A1A)
-                  : const Color(0xFFF7F7F7))
-              .withValues(alpha: 0.75),
+          ..color =
+              (crosshairPlayer == Board.black
+                      ? const Color(0xFF1A1A1A)
+                      : const Color(0xFFF7F7F7))
+                  .withValues(alpha: 0.75),
       );
       canvas.drawCircle(
         at,
@@ -230,7 +263,11 @@ class BoardPainter extends CustomPainter {
     final tp = TextPainter(
       text: TextSpan(
         text: s,
-        style: TextStyle(color: color, fontSize: fontSize, fontWeight: FontWeight.w700),
+        style: TextStyle(
+          color: color,
+          fontSize: fontSize,
+          fontWeight: FontWeight.w700,
+        ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();

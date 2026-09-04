@@ -15,7 +15,6 @@ import 'engine/board.dart';
 import 'engine/net.dart';
 import 'game/shape_game.dart';
 
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
@@ -26,11 +25,14 @@ class ShapeApp extends StatelessWidget {
   const ShapeApp({super.key});
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'SHAPE',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(colorSchemeSeed: const Color(0xFF0B6E2E), useMaterial3: true),
-        home: const HomePage(),
-      );
+    title: 'SHAPE',
+    debugShowCheckedModeBanner: false,
+    theme: ThemeData(
+      colorSchemeSeed: const Color(0xFF0B6E2E),
+      useMaterial3: true,
+    ),
+    home: const HomePage(),
+  );
 }
 
 class HomePage extends StatefulWidget {
@@ -119,7 +121,10 @@ class _HomePageState extends State<HomePage> {
         body: Padding(
           padding: const EdgeInsets.all(16),
           child: SingleChildScrollView(
-            child: Text('$loadError', style: const TextStyle(color: Colors.red, fontSize: 12)),
+            child: Text(
+              '$loadError',
+              style: const TextStyle(color: Colors.red, fontSize: 12),
+            ),
           ),
         ),
       );
@@ -128,11 +133,14 @@ class _HomePageState extends State<HomePage> {
     if (g == null) {
       return Scaffold(
         body: Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
-            Text(status),
-          ]),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(status),
+            ],
+          ),
         ),
       );
     }
@@ -171,8 +179,9 @@ class _HomePageState extends State<HomePage> {
             tooltip: g.reviewing
                 ? 'Back to the game'
                 : 'What would ${rankLabel(g.targetRank)} have played?',
-            onPressed:
-                navEnabled && g.hasEngine && g.canReviewOwnMove ? g.toggleReview : null,
+            onPressed: navEnabled && g.hasEngine && g.canReviewOwnMove
+                ? g.toggleReview
+                : null,
             icon: Icon(g.reviewing ? Icons.lightbulb : Icons.lightbulb_outline),
             color: g.reviewing ? const Color(0xFFF9A825) : null,
           ),
@@ -216,145 +225,161 @@ class _HomePageState extends State<HomePage> {
   /// Everything that is not needed on every move lives here, so the board and the
   /// controls that are can fit on one screen without scrolling.
   Widget _menu(ShapeGame g) => PopupMenuButton<String>(
-        tooltip: 'Menu',
-        position: PopupMenuPosition.under,
-        onSelected: (v) async {
-          switch (v) {
-            case 'pass':
-              await g.pass();
-            case 'new':
-              await _newGame(g);
-            case 'open':
-              await _openSgf(g);
-            case 'save':
-              await _saveSgf(g);
-            case 'retry':
-              await _retryEngine();
-            case 'ranks':
-              await _editRanks(g);
-            case 'help':
-              await _showHelp();
-          }
-        },
-        itemBuilder: (_) => [
-          PopupMenuItem(
-            value: 'pass',
-            enabled: !g.busy && !g.gameOver && g.humanToPlay,
-            child: const ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.skip_next),
-              title: Text('Pass'),
-            ),
+    tooltip: 'Menu',
+    position: PopupMenuPosition.under,
+    onSelected: (v) async {
+      switch (v) {
+        case 'pass':
+          await g.pass();
+        case 'new':
+          await _newGame(g);
+        case 'open':
+          await _openSgf(g);
+        case 'save':
+          await _saveSgf(g);
+        case 'retry':
+          await _retryEngine();
+        case 'ranks':
+          await _editRanks(g);
+        case 'help':
+          await _showHelp();
+      }
+    },
+    itemBuilder: (_) => [
+      PopupMenuItem(
+        value: 'pass',
+        enabled: g.canPlace,
+        child: const ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(Icons.skip_next),
+          title: Text('Pass'),
+        ),
+      ),
+      PopupMenuItem(
+        value: 'new',
+        enabled: !g.busy,
+        child: const ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(Icons.refresh),
+          title: Text('New game'),
+        ),
+      ),
+      PopupMenuItem(
+        value: 'open',
+        enabled: !g.busy,
+        child: const ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(Icons.folder_open),
+          title: Text('Open SGF'),
+        ),
+      ),
+      PopupMenuItem(
+        value: 'save',
+        enabled: !g.busy,
+        child: const ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(Icons.save_alt),
+          title: Text('Save SGF'),
+        ),
+      ),
+      if (!g.hasEngine)
+        PopupMenuItem(
+          value: 'retry',
+          enabled: !g.busy,
+          child: const ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.replay),
+            title: Text('Retry model'),
           ),
-          PopupMenuItem(
-            value: 'new',
-            enabled: !g.busy,
-            child: const ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.refresh),
-              title: Text('New game'),
-            ),
+        ),
+      PopupMenuItem(
+        value: 'ranks',
+        enabled: !g.busy,
+        child: ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.tune),
+          title: const Text('Settings'),
+          subtitle: Text(
+            '${rankLabel(g.playerRank)} · ${rankLabel(g.targetRank)} '
+            '· ${rankLabel(g.opponentRank)}',
           ),
-          PopupMenuItem(
-            value: 'open',
-            enabled: !g.busy,
-            child: const ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.folder_open),
-              title: Text('Open SGF'),
-            ),
-          ),
-          PopupMenuItem(
-            value: 'save',
-            enabled: !g.busy,
-            child: const ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.save_alt),
-              title: Text('Save SGF'),
-            ),
-          ),
-          if (!g.hasEngine)
-            PopupMenuItem(
-              value: 'retry',
-              enabled: !g.busy,
-              child: const ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.replay),
-                title: Text('Retry model'),
+        ),
+      ),
+      const PopupMenuItem(
+        value: 'help',
+        child: ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(Icons.help_outline),
+          title: Text('Help'),
+        ),
+      ),
+      const PopupMenuDivider(),
+      PopupMenuItem(
+        enabled: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'SHAPE${_version == null ? "" : "  $_version"}',
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+                color: Colors.black87,
               ),
             ),
-          PopupMenuItem(
-            value: 'ranks',
-            enabled: !g.busy,
-            child: ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.tune),
-              title: const Text('Settings'),
-              subtitle: Text('${rankLabel(g.playerRank)} · ${rankLabel(g.targetRank)} '
-                  '· ${rankLabel(g.opponentRank)}'),
-            ),
-          ),
-          const PopupMenuItem(
-            value: 'help',
-            child: ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.help_outline),
-              title: Text('Help'),
-            ),
-          ),
-          const PopupMenuDivider(),
-          PopupMenuItem(
-            enabled: false,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('SHAPE${_version == null ? "" : "  $_version"}',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w700, fontSize: 12, color: Colors.black87)),
-              const SizedBox(height: 6),
-              _stat('Board', '${g.boardSize}×${g.boardSize}'),
-              _stat('Move', '${g.cursor} of ${g.currentLine.length}'),
-              _stat('Mistakes', '${g.knownMistakes.length}'),
-              _stat('Engine', g.hasEngine ? g.engine!.provider : 'none'),
-              if (g.hasEngine)
-                _stat('Speed',
-                    '${g.msPerEval} ms/eval   ×${g.analysisEvals} = ${g.analysisMs} ms'),
-            ]),
-          ),
-        ],
-        icon: const Icon(Icons.menu),
-      );
-
-  Future<void> _showHelp() => showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('How to use SHAPE'),
-          content: const SingleChildScrollView(
-            child: Text(
-              'Aim with your finger and release to play.\n\n'
-              'Feedback judges your move after you play. Choose Off, Mistakes, '
-              'or All. Policy shows likely moves before you play.\n\n'
-              'The eye shows or hides the rough score estimate. It does not use '
-              'search.\n\n'
-              'Single arrows browse the game. Double arrows jump between known '
-              'mistakes. The bulb shows what your target rank might have played.\n\n'
-              'Playing from history adds a variation. Pass, SGF files, and '
-              'settings are in this menu.',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Close'),
-            ),
+            const SizedBox(height: 6),
+            _stat('Board', '${g.boardSize}×${g.boardSize}'),
+            _stat('Move', '${g.cursor} of ${g.currentLine.length}'),
+            _stat('Mistakes', '${g.knownMistakes.length}'),
+            _stat('Engine', g.hasEngine ? g.engine!.provider : 'none'),
+            if (g.hasEngine)
+              _stat(
+                'Speed',
+                '${g.msPerEval} ms/eval   ×${g.analysisEvals} = ${g.analysisMs} ms',
+              ),
           ],
         ),
-      );
+      ),
+    ],
+    icon: const Icon(Icons.menu),
+  );
+
+  Future<void> _showHelp() => showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('How to use SHAPE'),
+      content: const SingleChildScrollView(
+        child: Text(
+          'Aim with your finger and release to play.\n\n'
+          'Play auto-replies and the arrows browse a full turn. Analyze '
+          'never auto-plays, allows either colour, and steps one move at a '
+          'time. Opening an SGF starts in Analyze. Switching back to Play '
+          'continues from the move you are viewing.\n\n'
+          'Feedback judges your move after you play. Choose Off, Mistakes, '
+          'or All. Policy shows likely moves before you play.\n\n'
+          'The eye shows or hides the rough score estimate. It does not use '
+          'search.\n\n'
+          'Single arrows browse the game. Double arrows jump between known '
+          'mistakes. The bulb shows what your target rank might have played.\n\n'
+          'Playing from history adds a variation. Pass, SGF files, and '
+          'settings are in this menu.',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Close'),
+        ),
+      ],
+    ),
+  );
 
   Future<void> _openSgf(ShapeGame g) async {
     try {
@@ -362,9 +387,8 @@ class _HomePageState extends State<HomePage> {
       if (source == null || !mounted) return;
       await g.loadSgf(source);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Loaded ${g.cursor} moves')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Loaded ${g.cursor} moves')));
       }
     } catch (e) {
       if (mounted) {
@@ -377,15 +401,15 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _saveSgf(ShapeGame g) async {
     final now = DateTime.now();
-    final date = '${now.year.toString().padLeft(4, '0')}-'
+    final date =
+        '${now.year.toString().padLeft(4, '0')}-'
         '${now.month.toString().padLeft(2, '0')}-'
         '${now.day.toString().padLeft(2, '0')}';
     try {
       final saved = await saveSgfDocument(g.toSgf(), 'shape-$date.sgf');
       if (saved == true && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('SGF saved')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('SGF saved')));
       }
     } catch (e) {
       if (mounted) {
@@ -416,37 +440,45 @@ class _HomePageState extends State<HomePage> {
       ..playerRank = old.playerRank
       ..opponentRank = old.opponentRank
       ..targetRank = old.targetRank
-      ..autoplayOpponent = old.autoplayOpponent
       ..feedbackMode = old.feedbackMode
       ..heatmapMode = old.heatmapMode
       ..showScore = old.showScore
       ..mistakePoints = old.mistakePoints
       ..showLowWinNote = old.showLowWinNote
       ..lowWinThreshold = old.lowWinThreshold;
-    await replacement.loadSgf(sgf,
-        asColor: old.humanColor, atMove: oldCursor);
+    await replacement.loadSgf(sgf, asColor: old.humanColor, atMove: oldCursor);
+    await replacement.setMode(old.mode);
   }
 
   /// One labelled row of the diagnostics block, so the numbers line up instead of
   /// running together.
   Widget _stat(String label, String value) => Padding(
-        padding: const EdgeInsets.only(bottom: 2),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SizedBox(
-            width: 68,
-            child: Text(label,
-                style: const TextStyle(fontSize: 11, color: Colors.black45)),
+    padding: const EdgeInsets.only(bottom: 2),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 68,
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 11, color: Colors.black45),
           ),
-          Expanded(
-            child: Text(value,
-                style: const TextStyle(
-                    fontFamily: 'monospace', fontSize: 11, color: Colors.black87)),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 11,
+              color: Colors.black87,
+            ),
           ),
-        ]),
-      );
+        ),
+      ],
+    ),
+  );
 
-  bool _canPlay(ShapeGame g) =>
-      !g.busy && g.humanToPlay && !g.gameOver;
+  bool _canPlay(ShapeGame g) => g.canPlace;
 
   void _aim(ShapeGame g, BoardGeometry geom, Offset local) {
     if (!_canPlay(g)) return;
@@ -498,8 +530,9 @@ class _HomePageState extends State<HomePage> {
                   markedMove: showCard && fb != null && g.describedMoveIsPlayed
                       ? (fb.x, fb.y)
                       : null,
-                  markColor:
-                      fb == null ? Colors.transparent : verdictColor(fb.verdict),
+                  markColor: fb == null
+                      ? Colors.transparent
+                      : verdictColor(fb.verdict),
                   crosshair: _crosshair,
                   crosshairPlayer: g.pos.nextPlayer,
                   nextMoves: [
@@ -550,6 +583,7 @@ class _HomePageState extends State<HomePage> {
               playerRank: g.playerRank,
               targetRank: g.targetRank,
               boardSize: g.boardSize,
+              analyzing: g.mode == GameMode.analyze,
             ),
             const SizedBox(height: 6),
           ],
@@ -560,20 +594,24 @@ class _HomePageState extends State<HomePage> {
                   showSelectedIcon: false,
                   segments: const [
                     ButtonSegment(
-                        value: FeedbackMode.off,
-                        label: Text('Off'),
-                        tooltip: 'Feedback off'),
+                      value: FeedbackMode.off,
+                      label: Text('Off'),
+                      tooltip: 'Feedback off',
+                    ),
                     ButtonSegment(
-                        value: FeedbackMode.mistakesOnly,
-                        label: Text('Mistakes')),
+                      value: FeedbackMode.mistakesOnly,
+                      label: Text('Mistakes'),
+                    ),
                     ButtonSegment(
-                        value: FeedbackMode.all,
-                        label: Text('All'),
-                        tooltip: 'Feedback after every move'),
+                      value: FeedbackMode.all,
+                      label: Text('All'),
+                      tooltip: 'Feedback after every move',
+                    ),
                   ],
                   selected: {g.feedbackMode},
-                  onSelectionChanged:
-                      analysisEnabled ? (s) => g.setFeedbackMode(s.first) : null,
+                  onSelectionChanged: analysisEnabled
+                      ? (s) => g.setFeedbackMode(s.first)
+                      : null,
                 ),
               ),
               const SizedBox(width: 6),
@@ -584,26 +622,59 @@ class _HomePageState extends State<HomePage> {
           SegmentedButton<HeatmapMode>(
             showSelectedIcon: false,
             segments: [
-              const ButtonSegment(value: HeatmapMode.off, label: Text('Policy off')),
+              const ButtonSegment(
+                value: HeatmapMode.off,
+                label: Text('Policy off'),
+              ),
               ButtonSegment(
-                  value: HeatmapMode.yourRank, label: Text(rankLabel(g.playerRank))),
+                value: HeatmapMode.yourRank,
+                label: Text(rankLabel(g.playerRank)),
+              ),
               ButtonSegment(
-                  value: HeatmapMode.target, label: Text(rankLabel(g.targetRank))),
+                value: HeatmapMode.target,
+                label: Text(rankLabel(g.targetRank)),
+              ),
               const ButtonSegment(value: HeatmapMode.pro, label: Text('9p')),
             ],
             selected: {g.heatmapMode},
-            onSelectionChanged:
-                analysisEnabled ? (s) => g.setHeatmapMode(s.first) : null,
+            onSelectionChanged: analysisEnabled
+                ? (s) => g.setHeatmapMode(s.first)
+                : null,
+          ),
+          const SizedBox(height: 6),
+          SegmentedButton<GameMode>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(
+                value: GameMode.play,
+                label: Text('Play'),
+                tooltip: 'Play an opponent and browse full turns',
+              ),
+              ButtonSegment(
+                value: GameMode.analyze,
+                label: Text('Analyze'),
+                tooltip: 'Review one move at a time without autoplay',
+              ),
+            ],
+            selected: {g.mode},
+            onSelectionChanged: controlsEnabled
+                ? (s) => g.setMode(s.first)
+                : null,
           ),
           if (g.engineError != null) ...[
             const SizedBox(height: 4),
-            Text('No engine — board only, no opponent or feedback. '
-                '${g.engineError}',
-                style: const TextStyle(color: Color(0xFFE65100), fontSize: 11)),
+            Text(
+              'No engine — board only, no opponent or feedback. '
+              '${g.engineError}',
+              style: const TextStyle(color: Color(0xFFE65100), fontSize: 11),
+            ),
           ],
           if (g.error != null) ...[
             const SizedBox(height: 4),
-            Text(g.error!, style: const TextStyle(color: Colors.red, fontSize: 11)),
+            Text(
+              g.error!,
+              style: const TextStyle(color: Colors.red, fontSize: 11),
+            ),
           ],
         ],
       ),
@@ -626,13 +697,16 @@ class _HomePageState extends State<HomePage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-                g.showScore
-                    ? Icons.visibility_outlined
-                    : Icons.visibility_off_outlined,
-                size: 18),
+              g.showScore
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
+              size: 18,
+            ),
             const SizedBox(width: 4),
-            Text(label,
-                style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+            ),
           ],
         ),
       ),
@@ -653,8 +727,10 @@ class _HomePageState extends State<HomePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('Board',
-                  style: TextStyle(fontSize: 12, color: Colors.black54)),
+              const Text(
+                'Board',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
               const SizedBox(height: 6),
               SegmentedButton<int>(
                 showSelectedIcon: false,
@@ -666,8 +742,10 @@ class _HomePageState extends State<HomePage> {
                 onSelectionChanged: (v) => setDialogState(() => size = v.first),
               ),
               const SizedBox(height: 14),
-              const Text('You play',
-                  style: TextStyle(fontSize: 12, color: Colors.black54)),
+              const Text(
+                'You play',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
               const SizedBox(height: 6),
               SegmentedButton<int>(
                 showSelectedIcon: false,
@@ -676,7 +754,8 @@ class _HomePageState extends State<HomePage> {
                   ButtonSegment(value: Board.white, label: Text('White')),
                 ],
                 selected: {color},
-                onSelectionChanged: (v) => setDialogState(() => color = v.first),
+                onSelectionChanged: (v) =>
+                    setDialogState(() => color = v.first),
               ),
               const SizedBox(height: 8),
               Text(
@@ -690,10 +769,13 @@ class _HomePageState extends State<HomePage> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true), child: const Text('Start')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Start'),
+          ),
         ],
       ),
     );
@@ -703,89 +785,95 @@ class _HomePageState extends State<HomePage> {
 
   /// Mistakes-only hides the card unless the move was actually flagged.
   bool _showCard(ShapeGame g) => switch (g.feedbackMode) {
-        FeedbackMode.off => false,
-        FeedbackMode.all => true,
-        FeedbackMode.mistakesOnly => g.feedback?.isMistake ?? false,
-      };
+    FeedbackMode.off => false,
+    FeedbackMode.all => true,
+    FeedbackMode.mistakesOnly => g.feedback?.isMistake ?? false,
+  };
 
   Future<void> _editRanks(ShapeGame g) => showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: true,
-        isScrollControlled: true,
-        builder: (sheetContext) => StatefulBuilder(
-          builder: (context, setSheetState) => SingleChildScrollView(
-            child: Padding(
-              // viewInsets clears the keyboard; viewPadding clears the system
-              // navigation bar, which the sheet otherwise sits underneath.
-              padding: EdgeInsets.fromLTRB(
-                16,
-                0,
-                16,
-                16 +
-                    MediaQuery.of(context).viewInsets.bottom +
-                    MediaQuery.of(context).viewPadding.bottom,
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheetContext) => StatefulBuilder(
+      builder: (context, setSheetState) => SingleChildScrollView(
+        child: Padding(
+          // viewInsets clears the keyboard; viewPadding clears the system
+          // navigation bar, which the sheet otherwise sits underneath.
+          padding: EdgeInsets.fromLTRB(
+            16,
+            0,
+            16,
+            16 +
+                MediaQuery.of(context).viewInsets.bottom +
+                MediaQuery.of(context).viewPadding.bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _rankPicker('Your rank', g.playerRank, (v) async {
+                await g.setRanks(player: v);
+                if (sheetContext.mounted) setSheetState(() {});
+              }),
+              const SizedBox(height: 10),
+              _rankPicker('Aiming at', g.targetRank, (v) async {
+                await g.setRanks(target: v);
+                if (sheetContext.mounted) setSheetState(() {});
+              }),
+              const SizedBox(height: 10),
+              _rankPicker('Opponent', g.opponentRank, (v) async {
+                await g.setRanks(opponent: v);
+                if (sheetContext.mounted) setSheetState(() {});
+              }),
+              const Divider(height: 28),
+              _slider(
+                'Flag mistakes over',
+                '${g.mistakePoints.toStringAsFixed(1)} points',
+                g.mistakePoints,
+                min: 0.5,
+                max: 5.0,
+                divisions: 9,
+                onChanged: (v) {
+                  setSheetState(() {});
+                  g.setMistakePoints(v);
+                },
               ),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                _rankPicker('Your rank', g.playerRank, (v) async {
-                  await g.setRanks(player: v);
-                  if (sheetContext.mounted) setSheetState(() {});
-                }),
-                const SizedBox(height: 10),
-                _rankPicker('Aiming at', g.targetRank, (v) async {
-                  await g.setRanks(target: v);
-                  if (sheetContext.mounted) setSheetState(() {});
-                }),
-                const SizedBox(height: 10),
-                _rankPicker('Opponent', g.opponentRank, (v) async {
-                  await g.setRanks(opponent: v);
-                  if (sheetContext.mounted) setSheetState(() {});
-                }),
-                const Divider(height: 28),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Low win-chance note',
+                  style: TextStyle(fontSize: 12),
+                ),
+                subtitle: Text(
+                  'Estimated at ${rankLabel(g.playerRank)}, after two of your '
+                  'turns at or below '
+                  '${(g.lowWinThreshold * 100).toStringAsFixed(0)}%',
+                  style: const TextStyle(fontSize: 11),
+                ),
+                value: g.showLowWinNote,
+                onChanged: (v) {
+                  setSheetState(() {});
+                  g.setShowLowWinNote(v);
+                },
+              ),
+              if (g.showLowWinNote)
                 _slider(
-                  'Flag mistakes over',
-                  '${g.mistakePoints.toStringAsFixed(1)} points',
-                  g.mistakePoints,
-                  min: 0.5,
-                  max: 5.0,
-                  divisions: 9,
+                  'Call the game decided below',
+                  '${(g.lowWinThreshold * 100).toStringAsFixed(0)}% win chance',
+                  g.lowWinThreshold,
+                  min: 0.01,
+                  max: 0.20,
+                  divisions: 19,
                   onChanged: (v) {
                     setSheetState(() {});
-                    g.setMistakePoints(v);
+                    g.setLowWinThreshold(v);
                   },
                 ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Low win-chance note',
-                      style: TextStyle(fontSize: 12)),
-                  subtitle: Text(
-                      'Estimated at ${rankLabel(g.playerRank)}, after two of your '
-                      'turns at or below '
-                      '${(g.lowWinThreshold * 100).toStringAsFixed(0)}%',
-                      style: const TextStyle(fontSize: 11)),
-                  value: g.showLowWinNote,
-                  onChanged: (v) {
-                    setSheetState(() {});
-                    g.setShowLowWinNote(v);
-                  },
-                ),
-                if (g.showLowWinNote)
-                  _slider(
-                    'Call the game decided below',
-                    '${(g.lowWinThreshold * 100).toStringAsFixed(0)}% win chance',
-                    g.lowWinThreshold,
-                    min: 0.01,
-                    max: 0.20,
-                    divisions: 19,
-                    onChanged: (v) {
-                      setSheetState(() {});
-                      g.setLowWinThreshold(v);
-                    },
-                  ),
-              ]),
-            ),
+            ],
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   /// A labelled slider with its current value shown, since a bare track says
   /// nothing about what it is setting.
@@ -797,49 +885,59 @@ class _HomePageState extends State<HomePage> {
     required double max,
     required int divisions,
     required ValueChanged<double> onChanged,
-  }) =>
-      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
+  }) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(
+        children: [
           Expanded(
-            child: Text(label,
-                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
           ),
-          Text(value,
-              style: const TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
-        ]),
-        Slider(
-          value: current.clamp(min, max),
-          min: min,
-          max: max,
-          divisions: divisions,
-          onChanged: onChanged,
-        ),
-      ]);
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ],
+      ),
+      Slider(
+        value: current.clamp(min, max),
+        min: min,
+        max: max,
+        divisions: divisions,
+        onChanged: onChanged,
+      ),
+    ],
+  );
 
   Widget _rankPicker(
     String label,
     String value,
     Future<void> Function(String) onChanged,
-  ) =>
-      InputDecorator(
-        decoration: InputDecoration(
-          labelText: label,
-          isDense: true,
-          border: const OutlineInputBorder(),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        ),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            isExpanded: true,
-            value: value,
-            items: kRanks
-                .map((r) => DropdownMenuItem(value: r, child: Text(rankLabel(r))))
-                .toList(),
-            onChanged: (v) {
-              if (v != null) onChanged(v);
-            },
-          ),
-        ),
-      );
+  ) => InputDecorator(
+    decoration: InputDecoration(
+      labelText: label,
+      isDense: true,
+      border: const OutlineInputBorder(),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+    ),
+    child: DropdownButtonHideUnderline(
+      child: DropdownButton<String>(
+        isExpanded: true,
+        value: value,
+        items: kRanks
+            .map((r) => DropdownMenuItem(value: r, child: Text(rankLabel(r))))
+            .toList(),
+        onChanged: (v) {
+          if (v != null) onChanged(v);
+        },
+      ),
+    ),
+  );
 }
