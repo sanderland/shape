@@ -31,8 +31,17 @@ class MoveRecord {
   final int movesBlack;
   final int movesWhite;
 
-  MoveRecord(this.pla, this.loc, this.simpleKoPoint, this.capDirs, this.selfCap,
-      this.capturesBlack, this.capturesWhite, this.movesBlack, this.movesWhite);
+  MoveRecord(
+    this.pla,
+    this.loc,
+    this.simpleKoPoint,
+    this.capDirs,
+    this.selfCap,
+    this.capturesBlack,
+    this.capturesWhite,
+    this.movesBlack,
+    this.movesWhite,
+  );
 }
 
 class Board {
@@ -117,7 +126,10 @@ class Board {
   bool isOnBoard(int l) => l >= 0 && l < arrSize && board[l] != wall;
 
   bool isAdjacent(int loc1, int loc2) =>
-      loc1 == loc2 + adj[0] || loc1 == loc2 + adj[1] || loc1 == loc2 + adj[2] || loc1 == loc2 + adj[3];
+      loc1 == loc2 + adj[0] ||
+      loc1 == loc2 + adj[1] ||
+      loc1 == loc2 + adj[2] ||
+      loc1 == loc2 + adj[3];
 
   int numLiberties(int l) {
     if (board[l] == empty || board[l] == wall) return 0;
@@ -140,10 +152,15 @@ class Board {
     final opp = getOpp(p);
     for (var i = 0; i < 4; i++) {
       final a = l + adj[i];
-      if (board[a] == empty || (board[a] == opp && groupLibertyCount[groupHead[a]] == 1)) return false;
+      if (board[a] == empty ||
+          (board[a] == opp && groupLibertyCount[groupHead[a]] == 1)) {
+        return false;
+      }
     }
     for (var i = 0; i < 4; i++) {
-      if (board[l + adj[i]] == p) return false;
+      if (board[l + adj[i]] == p) {
+        return false;
+      }
     }
     return true;
   }
@@ -186,7 +203,9 @@ class Board {
 
     bool wouldBeEmpty(int possibleLib) {
       if (board[possibleLib] == empty) return true;
-      if (board[possibleLib] == opp) return capturedGroupHeads.contains(groupHead[possibleLib]);
+      if (board[possibleLib] == opp) {
+        return capturedGroupHeads.contains(groupHead[possibleLib]);
+      }
       return false;
     }
 
@@ -201,7 +220,9 @@ class Board {
           while (true) {
             for (var k = 0; k < 4; k++) {
               final possibleLib = cur + adj[k];
-              if (possibleLib != l && wouldBeEmpty(possibleLib) && !libs.contains(possibleLib)) {
+              if (possibleLib != l &&
+                  wouldBeEmpty(possibleLib) &&
+                  !libs.contains(possibleLib)) {
                 libs.add(possibleLib);
                 if (libs.length >= maxLibs) return maxLibs;
               }
@@ -216,12 +237,22 @@ class Board {
   }
 
   void play(int p, int l) {
-    if (p != black && p != white) throw IllegalMoveError('Invalid pla for board.play');
+    if (p != black && p != white) {
+      throw IllegalMoveError('Invalid pla for board.play');
+    }
     if (l != passLoc) {
-      if (!isOnBoard(l)) throw IllegalMoveError('Invalid loc for board.play');
-      if (board[l] != empty) throw IllegalMoveError('Location is nonempty');
-      if (wouldBeSingleStoneSuicide(p, l)) throw IllegalMoveError('Illegal single stone suicide');
-      if (l == simpleKoPoint) throw IllegalMoveError('Illegal simple ko recapture');
+      if (!isOnBoard(l)) {
+        throw IllegalMoveError('Invalid loc for board.play');
+      }
+      if (board[l] != empty) {
+        throw IllegalMoveError('Location is nonempty');
+      }
+      if (wouldBeSingleStoneSuicide(p, l)) {
+        throw IllegalMoveError('Illegal single stone suicide');
+      }
+      if (l == simpleKoPoint) {
+        throw IllegalMoveError('Illegal simple ko recapture');
+      }
     }
     playUnsafe(p, l);
   }
@@ -242,13 +273,25 @@ class Board {
     final oldKo = simpleKoPoint;
     for (var i = 0; i < 4; i++) {
       final a = l + adj[i];
-      if (board[a] == opp && groupLibertyCount[groupHead[a]] == 1) capDirs.add(i);
+      if (board[a] == opp && groupLibertyCount[groupHead[a]] == 1) {
+        capDirs.add(i);
+      }
     }
     final oldCapB = capturesBlack, oldCapW = capturesWhite;
     final oldMovB = movesBlack, oldMovW = movesWhite;
     playUnsafe(p, l);
     final selfCap = board[l] == empty;
-    return MoveRecord(p, l, oldKo, capDirs, selfCap, oldCapB, oldCapW, oldMovB, oldMovW);
+    return MoveRecord(
+      p,
+      l,
+      oldKo,
+      capDirs,
+      selfCap,
+      oldCapB,
+      oldCapW,
+      oldMovB,
+      oldMovW,
+    );
   }
 
   void undo(MoveRecord record) {
@@ -317,7 +360,9 @@ class Board {
     var nextTailTarget = l;
     for (var i = 0; i < 4; i++) {
       final a = l + adj[i];
-      if (board[a] == empty) nextTailTarget = _floodFillStonesHelper(head, nextTailTarget, a, p);
+      if (board[a] == empty) {
+        nextTailTarget = _floodFillStonesHelper(head, nextTailTarget, a, p);
+      }
     }
     return nextTailTarget;
   }
@@ -365,17 +410,23 @@ class Board {
     groupNext[l] = l;
     groupPrev[l] = l;
 
-    final adj0 = l + adj[0], adj1 = l + adj[1], adj2 = l + adj[2], adj3 = l + adj[3];
+    final adj0 = l + adj[0],
+        adj1 = l + adj[1],
+        adj2 = l + adj[2],
+        adj3 = l + adj[3];
 
     // Fill surrounding liberties, carefully avoiding double-counting.
     if (board[adj0] == black || board[adj0] == white) {
       groupLibertyCount[groupHead[adj0]] -= 1;
     }
     if (board[adj1] == black || board[adj1] == white) {
-      if (groupHead[adj1] != groupHead[adj0]) groupLibertyCount[groupHead[adj1]] -= 1;
+      if (groupHead[adj1] != groupHead[adj0]) {
+        groupLibertyCount[groupHead[adj1]] -= 1;
+      }
     }
     if (board[adj2] == black || board[adj2] == white) {
-      if (groupHead[adj2] != groupHead[adj0] && groupHead[adj2] != groupHead[adj1]) {
+      if (groupHead[adj2] != groupHead[adj0] &&
+          groupHead[adj2] != groupHead[adj1]) {
         groupLibertyCount[groupHead[adj2]] -= 1;
       }
     }
@@ -441,13 +492,19 @@ class Board {
   }
 
   void changeSurroundingLiberties(int l, int p, int delta) {
-    final adj0 = l + adj[0], adj1 = l + adj[1], adj2 = l + adj[2], adj3 = l + adj[3];
+    final adj0 = l + adj[0],
+        adj1 = l + adj[1],
+        adj2 = l + adj[2],
+        adj3 = l + adj[3];
     if (board[adj0] == p) groupLibertyCount[groupHead[adj0]] += delta;
     if (board[adj1] == p) {
-      if (groupHead[adj1] != groupHead[adj0]) groupLibertyCount[groupHead[adj1]] += delta;
+        if (groupHead[adj1] != groupHead[adj0]) {
+          groupLibertyCount[groupHead[adj1]] += delta;
+        }
     }
     if (board[adj2] == p) {
-      if (groupHead[adj2] != groupHead[adj0] && groupHead[adj2] != groupHead[adj1]) {
+      if (groupHead[adj2] != groupHead[adj0] &&
+          groupHead[adj2] != groupHead[adj1]) {
         groupLibertyCount[groupHead[adj2]] += delta;
       }
     }
@@ -521,13 +578,19 @@ class Board {
 
     var l = group;
     while (true) {
-      final adj0 = l + adj[0], adj1 = l + adj[1], adj2 = l + adj[2], adj3 = l + adj[3];
+      final adj0 = l + adj[0],
+          adj1 = l + adj[1],
+          adj2 = l + adj[2],
+          adj3 = l + adj[3];
       if (board[adj0] == opp) groupLibertyCount[groupHead[adj0]] += 1;
       if (board[adj1] == opp) {
-        if (groupHead[adj1] != groupHead[adj0]) groupLibertyCount[groupHead[adj1]] += 1;
+        if (groupHead[adj1] != groupHead[adj0]) {
+          groupLibertyCount[groupHead[adj1]] += 1;
+        }
       }
       if (board[adj2] == opp) {
-        if (groupHead[adj2] != groupHead[adj0] && groupHead[adj2] != groupHead[adj1]) {
+        if (groupHead[adj2] != groupHead[adj0] &&
+            groupHead[adj2] != groupHead[adj1]) {
           groupLibertyCount[groupHead[adj2]] += 1;
         }
       }
@@ -598,7 +661,9 @@ class Board {
     while (true) {
       for (var i = 0; i < 4; i++) {
         final a = cur + adj[i];
-        if (board[a] == opp && groupLibertyCount[groupHead[a]] == 1) return true;
+        if (board[a] == opp && groupLibertyCount[groupHead[a]] == 1) {
+          return true;
+        }
       }
       cur = groupNext[cur];
       if (cur == l) break;
@@ -704,7 +769,8 @@ class Board {
       }
 
       final isDefender =
-          (defenderFirst && stackIdx % 2 == 0) || (!defenderFirst && stackIdx % 2 == 1);
+          (defenderFirst && stackIdx % 2 == 0) ||
+          (!defenderFirst && stackIdx % 2 == 1);
 
       if (moveListCur[stackIdx] == -1) {
         final libs = groupLibertyCount[groupHead[l]];
@@ -751,8 +817,12 @@ class Board {
           var libs1 = countImmediateLiberties(move1).toDouble();
 
           // Double-ko death: assume the attacker wins.
-          if (libs0 == 0 && libs1 == 0 && wouldBeKoCapture(move0, opp) && wouldBeKoCapture(move1, opp)) {
-            if (getLibertiesAfterPlay(p, move0, 3) <= 2 && getLibertiesAfterPlay(p, move1, 3) <= 2) {
+          if (libs0 == 0 &&
+              libs1 == 0 &&
+              wouldBeKoCapture(move0, opp) &&
+              wouldBeKoCapture(move1, opp)) {
+            if (getLibertiesAfterPlay(p, move0, 3) <= 2 &&
+                getLibertiesAfterPlay(p, move1, 3) <= 2) {
               if (hasLibertyGainingCaptures(l)) {
                 returnValue = true;
                 returnedFromDeeper = true;

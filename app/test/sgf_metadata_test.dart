@@ -12,8 +12,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:goshape/sgf_metadata.dart';
 
 void main() {
-  final ref = jsonDecode(File('assets/reference.json').readAsStringSync())
-      as Map<String, dynamic>;
+  final ref = jsonDecode(
+    File('assets/reference.json').readAsStringSync(),
+  ) as Map<String, dynamic>;
   final nextPlayer = ref['nextPlayer'] == 'W' ? kWhite : kBlack;
   final profiles = (ref['profiles'] as Map).cast<String, dynamic>();
 
@@ -33,8 +34,11 @@ void main() {
       expect(actual.length, kMetadataChannels);
 
       for (var i = 0; i < kMetadataChannels; i++) {
-        expect(actual[i], closeTo(expected[i], 1e-6),
-            reason: 'channel $i of ${entry.key}');
+        expect(
+          actual[i],
+          closeTo(expected[i], 1e-6),
+          reason: 'channel $i of ${entry.key}',
+        );
       }
     });
   }

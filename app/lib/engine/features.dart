@@ -59,16 +59,16 @@ class Rules {
   );
 
   Rules withKomi(double komi) => Rules(
-        koRule: koRule,
-        scoringRule: scoringRule,
-        taxRule: taxRule,
-        multiStoneSuicideLegal: multiStoneSuicideLegal,
-        hasButton: hasButton,
-        encorePhase: encorePhase,
-        passWouldEndPhase: passWouldEndPhase,
-        whiteKomi: komi,
-        asymPowersOfTwo: asymPowersOfTwo,
-      );
+    koRule: koRule,
+    scoringRule: scoringRule,
+    taxRule: taxRule,
+    multiStoneSuicideLegal: multiStoneSuicideLegal,
+    hasButton: hasButton,
+    encorePhase: encorePhase,
+    passWouldEndPhase: passWouldEndPhase,
+    whiteKomi: komi,
+    asymPowersOfTwo: asymPowersOfTwo,
+  );
 
   /// SGF `RU` values, as SHAPE writes them.
   static Rules fromName(String name) {
@@ -143,7 +143,10 @@ class Features {
   int locToTensorPos(int loc, Board b) => b.locY(loc) * posLen + b.locX(loc);
 
   /// Calls [f] for each stone belonging to a ladder-captured group.
-  void iterLadders(Board b, void Function(int loc, int pos, List<int> workingMoves) f) {
+  void iterLadders(
+    Board b,
+    void Function(int loc, int pos, List<int> workingMoves) f,
+  ) {
     final chainHeadsSolved = <int, bool>{};
     final copy = b.copy();
 
@@ -167,7 +170,9 @@ class Features {
                 workingMoves = const [];
                 laddered = copy.searchIsLadderCaptured(loc, true);
               } else {
-                workingMoves = copy.searchIsLadderCapturedAttackerFirst2Libs(loc);
+                workingMoves = copy.searchIsLadderCapturedAttackerFirst2Libs(
+                  loc,
+                );
                 laddered = workingMoves.isNotEmpty;
               }
               chainHeadsSolved[head] = laddered;
@@ -293,7 +298,8 @@ class Features {
     // leaves them blank -- so pass-alive is never needed. Anything else would require
     // porting calculateArea/calculateNonDameTouchingArea, so refuse rather than
     // silently emit zeros and produce a subtly wrong policy.
-    final needsArea = rules.scoringRule == 'SCORING_AREA' || rules.encorePhase >= 2;
+    final needsArea =
+        rules.scoringRule == 'SCORING_AREA' || rules.encorePhase >= 2;
     if (needsArea) {
       throw UnimplementedError(
         'Area scoring (${rules.scoringRule}, encorePhase ${rules.encorePhase}) needs '
@@ -306,7 +312,9 @@ class Features {
     double selfKomi;
     if (rules.scoringRule == 'SCORING_TERRITORY') {
       final whiteSelfKomi =
-          whiteKomi + b.numNonPassMovesMade(Board.black) - b.numNonPassMovesMade(Board.white);
+          whiteKomi +
+          b.numNonPassMovesMade(Board.black) -
+          b.numNonPassMovesMade(Board.white);
       selfKomi = pla == Board.white ? whiteSelfKomi : -whiteSelfKomi;
     } else {
       selfKomi = pla == Board.white ? whiteKomi : -whiteKomi;

@@ -23,7 +23,11 @@ class RecordingRunner implements NetRunner {
   int closed = 0;
 
   @override
-  Future<NetOutputs> run(Float32List bin, Float32List global, Float32List meta) async {
+  Future<NetOutputs> run(
+    Float32List bin,
+    Float32List global,
+    Float32List meta,
+  ) async {
     metasSeen.add(meta);
     binsSeen.add(bin);
     final policy = Float32List(kPolicyLen)..[0] = meta[0];
@@ -39,24 +43,34 @@ class RecordingRunner implements NetRunner {
 }
 
 void main() {
-  test('every profile gets its own metadata row and its own evaluation', () async {
-    final runner = RecordingRunner();
-    final engine = ShapeEngine(runner);
-    final pos = GoPosition(19, Rules.japanese);
+  test(
+    'every profile gets its own metadata row and its own evaluation',
+    () async {
+      final runner = RecordingRunner();
+      final engine = ShapeEngine(runner);
+      final pos = GoPosition(19, Rules.japanese);
 
-    final out = await engine.analyze(pos, ['rank_5k', 'rank_2d', 'proyear_2023']);
+      final out = await engine.analyze(pos, [
+        'rank_5k',
+        'rank_2d',
+        'proyear_2023',
+      ]);
 
-    expect(out.keys, ['rank_5k', 'rank_2d', 'proyear_2023']);
-    expect(runner.metasSeen.length, 3);
+      expect(out.keys, ['rank_5k', 'rank_2d', 'proyear_2023']);
+      expect(runner.metasSeen.length, 3);
 
-    // Different ranks must produce different metadata, or the whole point of the
-    // human-SL net is lost -- three identical rows would look like a working app.
-    expect(runner.metasSeen.map((m) => m.join(',')).toSet().length, 3,
-        reason: 'profiles collapsed to the same metadata');
-    for (final m in runner.metasSeen) {
-      expect(m.length, kMetadataChannels);
-    }
-  });
+      // Different ranks must produce different metadata, or the whole point of the
+      // human-SL net is lost -- three identical rows would look like a working app.
+      expect(
+        runner.metasSeen.map((m) => m.join(',')).toSet().length,
+        3,
+        reason: 'profiles collapsed to the same metadata',
+      );
+      for (final m in runner.metasSeen) {
+        expect(m.length, kMetadataChannels);
+      }
+    },
+  );
 
   test('board features are computed once and shared across profiles', () async {
     final runner = RecordingRunner();
@@ -80,8 +94,9 @@ void main() {
     // The fake ties every output to the metadata it was given, so a mix-up between
     // profiles shows up as a mismatch here.
     for (final e in out.entries) {
-      final tag = runner.metasSeen
-          .firstWhere((m) => m[0] == e.value.policy.data[0])[0];
+      final tag = runner.metasSeen.firstWhere(
+        (m) => m[0] == e.value.policy.data[0],
+      )[0];
       expect(e.value.lead, closeTo(tag * 10, 1e-4));
       expect(e.value.sideToMoveWinProb, closeTo(1 / 3, 1e-6));
     }
@@ -92,12 +107,15 @@ void main() {
     // and all, versus what belongs in front of a user.
     expect(
       describeFailure(
-          'PlatformException(mnn, IllegalStateException: not supported on the '
-          'Android emulator, null, null)'),
+        'PlatformException(mnn, IllegalStateException: not supported on the '
+        'Android emulator, null, null)',
+      ),
       'not supported on the Android emulator',
     );
-    expect(describeFailure(StateError('engine went away')),
-        'Bad state: engine went away');
+    expect(
+      describeFailure(StateError('engine went away')),
+      'Bad state: engine went away',
+    );
     expect(describeFailure('plain trouble\nstack frame'), 'plain trouble');
   });
 

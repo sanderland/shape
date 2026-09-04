@@ -126,8 +126,10 @@ class SgfMetadata {
 
     row[86] = 0.5 * math.log(boardArea / 361.0);
 
-    final daysDifference =
-        gameDate.difference(DateTime.utc(1970, 1, 1)).inDays.toDouble();
+    final daysDifference = gameDate
+        .difference(DateTime.utc(1970, 1, 1))
+        .inDays
+        .toDouble();
     const dateStartIdx = 87;
     const dateLen = 32;
     var period = 7.0;
@@ -152,29 +154,29 @@ final Map<String, int> kInverseRank = {
 };
 
 SgfMetadata _basicRankProfile(int invB, int invW, bool preAz) => SgfMetadata(
-      inverseBRank: invB,
-      inverseWRank: invW,
-      bIsHuman: true,
-      wIsHuman: true,
-      gameRatednessIsUnknown: true,
-      tcIsUnknown: false,
-      tcIsByoYomi: true,
-      mainTimeSeconds: 1200,
-      periodTimeSeconds: 30,
-      byoYomiPeriods: 5,
-      gameDate: preAz ? DateTime.utc(2016, 9, 1) : DateTime.utc(2020, 3, 1),
-      source: kSourceKgs,
-    );
+  inverseBRank: invB,
+  inverseWRank: invW,
+  bIsHuman: true,
+  wIsHuman: true,
+  gameRatednessIsUnknown: true,
+  tcIsUnknown: false,
+  tcIsByoYomi: true,
+  mainTimeSeconds: 1200,
+  periodTimeSeconds: 30,
+  byoYomiPeriods: 5,
+  gameDate: preAz ? DateTime.utc(2016, 9, 1) : DateTime.utc(2020, 3, 1),
+  source: kSourceKgs,
+);
 
 SgfMetadata _proProfile(DateTime date, int source) => SgfMetadata(
-      inverseBRank: 1,
-      inverseWRank: 1,
-      bIsHuman: true,
-      wIsHuman: true,
-      tcIsUnknown: true,
-      gameDate: date,
-      source: source,
-    );
+  inverseBRank: 1,
+  inverseWRank: 1,
+  bIsHuman: true,
+  wIsHuman: true,
+  tcIsUnknown: true,
+  gameDate: date,
+  source: source,
+);
 
 SgfMetadata getProfile(String name) {
   if (name.startsWith('proyear_')) {
@@ -197,7 +199,10 @@ SgfMetadata getProfile(String name) {
         kInverseRank.containsKey(pieces[0]) &&
         kInverseRank.containsKey(pieces[1])) {
       return _basicRankProfile(
-          kInverseRank[pieces[0]]!, kInverseRank[pieces[1]]!, preAz);
+        kInverseRank[pieces[0]]!,
+        kInverseRank[pieces[1]]!,
+        preAz,
+      );
     }
   }
   throw ArgumentError('Unknown human SL network profile: $name');

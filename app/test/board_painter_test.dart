@@ -54,8 +54,9 @@ void main() {
       expect(g.nearest(const Offset(-50, -50)), (0, 0));
     });
 
-    testWidgets('paints $size x $size with heatmap, crosshair and markers',
-        (tester) async {
+    testWidgets('paints $size x $size with heatmap, crosshair and markers', (
+      tester,
+    ) async {
       final board = Board(size, size);
       board.play(Board.black, board.loc(2, 2));
       board.play(Board.white, board.loc(3, 3));

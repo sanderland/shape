@@ -49,7 +49,9 @@ class FakeAnalyzer implements Analyzer {
 
   @override
   Future<Map<String, ProfileAnalysis>> analyze(
-      GoPosition pos, List<String> profiles) async {
+    GoPosition pos,
+    List<String> profiles,
+  ) async {
     final blocker = blockNextAnalysis;
     blockNextAnalysis = null;
     if (blocker != null) await blocker.future;
@@ -61,7 +63,8 @@ class FakeAnalyzer implements Analyzer {
     final policy = policyFor?.call(pos) ?? _flat(pos);
     return {
       for (final p in profiles)
-        p: overrideFor?.call(p, pos) ??
+        p:
+            overrideFor?.call(p, pos) ??
             ProfileAnalysis(policy, encodeLine(pos)),
     };
   }
@@ -152,22 +155,32 @@ void main() {
     }
   });
 
-  test('replaying a move you already explored returns to it, cache and all',
-      () async {
-    final fake = FakeAnalyzer();
-    final g = newGame(fake);
-    await g.start();
-    await g.playAt(2, 2);
-    final first = g.current;
+  test(
+    'replaying a move you already explored returns to it, cache and all',
+    () async {
+      final fake = FakeAnalyzer();
+      final g = newGame(fake);
+      await g.start();
+      await g.playAt(2, 2);
+      final first = g.current;
 
-    await g.goFirst();
-    final callsBefore = fake.calls;
-    await g.playAt(2, 2);
+      await g.goFirst();
+      final callsBefore = fake.calls;
+      await g.playAt(2, 2);
 
-    expect(identical(g.current, first), isTrue, reason: 'same node, not a duplicate');
-    expect(g.root.children.length, 1);
-    expect(fake.calls, callsBefore, reason: 'its analyses were already there');
-  });
+      expect(
+        identical(g.current, first),
+        isTrue,
+        reason: 'same node, not a duplicate',
+      );
+      expect(g.root.children.length, 1);
+      expect(
+        fake.calls,
+        callsBefore,
+        reason: 'its analyses were already there',
+      );
+    },
+  );
 
   test('back and forward preserve the selected variation', () async {
     final fake = FakeAnalyzer();
@@ -182,57 +195,76 @@ void main() {
     expect(identical(first, variation), isFalse);
 
     await g.goPrev();
-    expect(identical(g.describedMove, variation), isTrue,
-        reason: 'the card should keep describing the branch just left');
-    expect(g.nextMoves.singleWhere((m) => m.x == 8 && m.y == 8).isMainLine,
-        isTrue,
-        reason: 'the board should mark the branch Forward will follow');
+    expect(
+      identical(g.describedMove, variation),
+      isTrue,
+      reason: 'the card should keep describing the branch just left',
+    );
+    expect(
+      g.nextMoves.singleWhere((m) => m.x == 8 && m.y == 8).isMainLine,
+      isTrue,
+      reason: 'the board should mark the branch Forward will follow',
+    );
 
     await g.goNext();
     expect(identical(g.current, variation), isTrue);
   });
 
-  test('replaying an explored move lets the opponent follow its known reply',
-      () async {
-    final fake = FakeAnalyzer();
-    final g = newGame(fake, autoplay: true);
-    await g.start();
-    await g.playAt(2, 2);
-    expect(g.cursor, 2, reason: 'your move and their reply');
-    final reply = g.current;
+  test(
+    'replaying an explored move lets the opponent follow its known reply',
+    () async {
+      final fake = FakeAnalyzer();
+      final g = newGame(fake, autoplay: true);
+      await g.start();
+      await g.playAt(2, 2);
+      expect(g.cursor, 2, reason: 'your move and their reply');
+      final reply = g.current;
 
-    await g.goFirst();
-    final callsBefore = fake.calls;
-    await g.playAt(2, 2);
+      await g.goFirst();
+      final callsBefore = fake.calls;
+      await g.playAt(2, 2);
 
-    expect(identical(g.current, reply), isTrue,
-        reason: 'the reply is already in the tree and should be resumed');
-    expect(g.cursor, 2);
-    expect(g.humanToPlay, isTrue,
-        reason: 'otherwise the board is dead until Forward is pressed by hand');
-    expect(fake.calls, callsBefore, reason: 'all of it was cached');
-    expect(reply.parent!.children.length, 1,
-        reason: 'resampling would invent a second answer to one position');
+      expect(
+        identical(g.current, reply),
+        isTrue,
+        reason: 'the reply is already in the tree and should be resumed',
+      );
+      expect(g.cursor, 2);
+      expect(
+        g.humanToPlay,
+        isTrue,
+        reason: 'otherwise the board is dead until Forward is pressed by hand',
+      );
+      expect(fake.calls, callsBefore, reason: 'all of it was cached');
+      expect(
+        reply.parent!.children.length,
+        1,
+        reason: 'resampling would invent a second answer to one position',
+      );
 
-    // And play carries on from there.
-    await g.playAt(4, 4);
-    expect(g.cursor, 4);
-  });
+      // And play carries on from there.
+      await g.playAt(4, 4);
+      expect(g.cursor, 4);
+    },
+  );
 
-  test('the sgf carries the variations, not just the line you ended on', () async {
-    final fake = FakeAnalyzer();
-    final g = newGame(fake);
-    await g.start();
-    await g.playAt(2, 2);
-    await g.goFirst();
-    await g.playAt(8, 8);
+  test(
+    'the sgf carries the variations, not just the line you ended on',
+    () async {
+      final fake = FakeAnalyzer();
+      final g = newGame(fake);
+      await g.start();
+      await g.playAt(2, 2);
+      await g.goFirst();
+      await g.playAt(8, 8);
 
-    final sgf = g.toSgf();
-    // Both first moves must be present, each in its own parenthesised variation.
-    expect(sgf, contains(';B[cc]'));
-    expect(sgf, contains(';B[ii]'));
-    expect('('.allMatches(sgf).length, greaterThan(1));
-  });
+      final sgf = g.toSgf();
+      // Both first moves must be present, each in its own parenthesised variation.
+      expect(sgf, contains(';B[cc]'));
+      expect(sgf, contains(';B[ii]'));
+      expect('('.allMatches(sgf).length, greaterThan(1));
+    },
+  );
 
   test('browsing history does no analysis work', () async {
     final fake = FakeAnalyzer();
@@ -250,7 +282,7 @@ void main() {
     expect(fake.calls, before, reason: 'navigation should be a pure cache hit');
   });
 
-  test('board-only navigation steps one move at a time', () async {
+  test('play navigation steps a full exchange', () async {
     final g = ShapeGame(null, boardSize: 9);
     await g.start();
     await g.playAt(2, 2);
@@ -258,9 +290,44 @@ void main() {
     await g.playAt(6, 6);
 
     await g.goPrev();
-    expect(g.cursor, 2);
+    expect(g.cursor, 1);
     await g.goNext();
     expect(g.cursor, 3);
+  });
+
+  test('analyze permits both colours and steps one move at a time', () async {
+    final fake = FakeAnalyzer();
+    final g = ShapeGame(fake, boardSize: 9, random: Random(1));
+    g.feedbackMode = FeedbackMode.all;
+    await g.setMode(GameMode.analyze);
+    await g.start();
+
+    await g.playAt(2, 2);
+    expect(g.cursor, 1, reason: 'analyze never adds a reply');
+    expect(g.humanToPlay, isFalse);
+    expect(g.canPlace, isTrue, reason: 'white can be entered during review');
+
+    await g.playAt(4, 4);
+    expect(g.cursor, 2);
+    expect(g.feedback, isNotNull, reason: 'white moves are reviewed too');
+
+    await g.goPrev();
+    expect(g.cursor, 1);
+    await g.goNext();
+    expect(g.cursor, 2);
+  });
+
+  test('returning to play replies only after your last move', () async {
+    final fake = FakeAnalyzer();
+    final g = ShapeGame(fake, boardSize: 9, random: Random(1));
+    await g.setMode(GameMode.analyze);
+    await g.start();
+    await g.playAt(2, 2);
+    expect(g.cursor, 1);
+
+    await g.setMode(GameMode.play);
+    expect(g.cursor, 2);
+    expect(g.current.move!.pla, Board.white);
   });
 
   test('opponent can pass', () async {
@@ -271,8 +338,12 @@ void main() {
     await g.playAt(2, 2);
 
     expect(g.line.length, greaterThanOrEqualTo(2));
-    expect(g.line.last.isPass, isTrue,
-        reason: 'without an AI net, sampling is the only way the opponent can pass');
+    expect(
+      g.line.last.isPass,
+      isTrue,
+      reason:
+          'without an AI net, sampling is the only way the opponent can pass',
+    );
   });
 
   test('two passes end the game', () async {
@@ -297,18 +368,25 @@ void main() {
     expect(g.feedback, isNull);
 
     g.setShowLowWinNote(false);
-    expect(g.activeProfiles, [kReferenceProfile],
-        reason: 'and it goes away with the note');
+    expect(g.activeProfiles, [
+      kReferenceProfile,
+    ], reason: 'and it goes away with the note');
     await g.setShowScore(false);
-    expect(g.activeProfiles, isEmpty,
-        reason: 'a hidden score does not cost an otherwise unused evaluation');
+    expect(
+      g.activeProfiles,
+      isEmpty,
+      reason: 'a hidden score does not cost an otherwise unused evaluation',
+    );
     await g.setShowScore(true);
     g.setShowLowWinNote(true);
 
     // Heatmap alone pulls in exactly the painted profile, not the feedback set.
     await g.setHeatmapMode(HeatmapMode.target);
-    expect(g.activeProfiles.toSet(),
-        {kReferenceProfile, g.playerRank, g.targetRank});
+    expect(g.activeProfiles.toSet(), {
+      kReferenceProfile,
+      g.playerRank,
+      g.targetRank,
+    });
 
     await g.setHeatmapMode(HeatmapMode.yourRank);
     expect(g.activeProfiles.toSet(), {kReferenceProfile, g.playerRank});
@@ -316,8 +394,11 @@ void main() {
     // Feedback alone needs player + target + the score reference, heatmap or not.
     await g.setHeatmapMode(HeatmapMode.off);
     await g.setFeedbackMode(FeedbackMode.all);
-    expect(g.activeProfiles.toSet(),
-        {g.playerRank, g.targetRank, kReferenceProfile});
+    expect(g.activeProfiles.toSet(), {
+      g.playerRank,
+      g.targetRank,
+      kReferenceProfile,
+    });
 
     // Mistakes-only is a display choice: it cannot be cheaper, since you must
     // evaluate a move to learn whether it was a mistake.
@@ -330,38 +411,53 @@ void main() {
     final fake = FakeAnalyzer();
     final g = newGame(fake, autoplay: true);
     await g.start();
-    expect(fake.analyzedProfiles.single.toSet(),
-        {g.playerRank, g.targetRank, kReferenceProfile});
+    expect(fake.analyzedProfiles.single.toSet(), {
+      g.playerRank,
+      g.targetRank,
+      kReferenceProfile,
+    });
 
     fake.analyzedProfiles.clear();
     await g.playAt(2, 2); // human plays; opponent autoplay replies
     expect(g.line.length, 2);
-    expect(fake.analyzedProfiles.first.toSet(), {g.opponentRank, kReferenceProfile},
-        reason: 'transient position: sampling policy + reference lead only');
-    expect(fake.analyzedProfiles.last.toSet(),
-        {g.playerRank, g.targetRank, kReferenceProfile},
-        reason: 'after the reply: heatmap/feedback profiles + reference lead');
-    expect(fake.analyzedProfiles.expand((p) => p).length, 5,
-        reason: 'a full exchange must cost 5 profile evals');
+    expect(fake.analyzedProfiles.first.toSet(), {
+      g.opponentRank,
+      kReferenceProfile,
+    }, reason: 'transient position: sampling policy + reference lead only');
+    expect(fake.analyzedProfiles.last.toSet(), {
+      g.playerRank,
+      g.targetRank,
+      kReferenceProfile,
+    }, reason: 'after the reply: heatmap/feedback profiles + reference lead');
+    expect(
+      fake.analyzedProfiles.expand((p) => p).length,
+      5,
+      reason: 'a full exchange must cost 5 profile evals',
+    );
   });
 
-  test('review jumps to the position before your last move, not the reply',
-      () async {
-    final fake = FakeAnalyzer();
-    final g = newGame(fake, autoplay: true);
-    await g.start();
-    await g.playAt(2, 2); // your move at index 0; opponent replies at index 1
-    expect(g.line.length, 2);
-    expect(g.cursor, 2);
+  test(
+    'review jumps to the position before your last move, not the reply',
+    () async {
+      final fake = FakeAnalyzer();
+      final g = newGame(fake, autoplay: true);
+      await g.start();
+      await g.playAt(2, 2); // your move at index 0; opponent replies at index 1
+      expect(g.line.length, 2);
+      expect(g.cursor, 2);
 
-    await g.setHeatmapMode(HeatmapMode.off);
-    await g.toggleReview();
+      await g.setHeatmapMode(HeatmapMode.off);
+      await g.toggleReview();
 
-    expect(g.cursor, 0, reason: 'should land on the position you faced');
-    expect(g.heatmapMode, HeatmapMode.target,
-        reason: 'the point of the button is to show the target policy');
-    expect(g.analysisFor(g.targetRank), isNotNull);
-  });
+      expect(g.cursor, 0, reason: 'should land on the position you faced');
+      expect(
+        g.heatmapMode,
+        HeatmapMode.target,
+        reason: 'the point of the button is to show the target policy',
+      );
+      expect(g.analysisFor(g.targetRank), isNotNull);
+    },
+  );
 
   test('review toggles back to where it was, heatmap included', () async {
     final fake = FakeAnalyzer();
@@ -378,9 +474,16 @@ void main() {
 
     await g.toggleReview();
     expect(g.reviewing, isFalse);
-    expect(g.cursor, cursorBefore, reason: 'should return to the live position');
-    expect(g.heatmapMode, HeatmapMode.yourRank,
-        reason: 'the heatmap setting was borrowed, not replaced');
+    expect(
+      g.cursor,
+      cursorBefore,
+      reason: 'should return to the live position',
+    );
+    expect(
+      g.heatmapMode,
+      HeatmapMode.yourRank,
+      reason: 'the heatmap setting was borrowed, not replaced',
+    );
   });
 
   test('ordinary navigation leaves review rather than stranding it', () async {
@@ -395,8 +498,7 @@ void main() {
     expect(g.reviewing, isFalse);
   });
 
-  test('feedback describes your move while the opponent is to blame for the position',
-      () async {
+  test('feedback describes your move while the opponent is to blame for the position', () async {
     final fake = FakeAnalyzer();
     final g = newGame(fake, autoplay: true);
     g.feedbackMode = FeedbackMode.all;
@@ -405,7 +507,11 @@ void main() {
 
     expect(g.line.length, 2, reason: 'opponent has replied');
     expect(g.cursor, 2);
-    expect(g.feedback, isNotNull, reason: 'still describing your move, not theirs');
+    expect(
+      g.feedback,
+      isNotNull,
+      reason: 'still describing your move, not theirs',
+    );
     expect((g.feedback!.x, g.feedback!.y), (2, 2));
   });
 
@@ -418,8 +524,11 @@ void main() {
     expect(g.feedback, isNull);
 
     await g.setFeedbackMode(FeedbackMode.all);
-    expect(g.feedback, isNotNull,
-        reason: 'no further move should be needed to get feedback');
+    expect(
+      g.feedback,
+      isNotNull,
+      reason: 'no further move should be needed to get feedback',
+    );
     expect((g.feedback!.x, g.feedback!.y), (2, 2));
   });
 
@@ -427,7 +536,8 @@ void main() {
     // The net is 19x19 whatever the board is, so a 9x9 game must still produce
     // moves inside 9x9 rather than anywhere in the tensor.
     final fake = FakeAnalyzer();
-    final g = ShapeGame(fake, boardSize: 19, random: Random(1))..autoplayOpponent = true;
+    final g = ShapeGame(fake, boardSize: 19, random: Random(1))
+      ..autoplayOpponent = true;
     await g.start();
     await g.playAt(2, 2);
     expect(g.boardSize, 19);
@@ -469,56 +579,72 @@ void main() {
     expect(g.cursor, 0);
   });
 
-  test('an engine that starts failing degrades instead of erroring every move',
-      () async {
-    final fake = FakeAnalyzer()..failFrom = 2;
-    final g = newGame(fake, autoplay: true);
-    g.feedbackMode = FeedbackMode.all;
-    await g.start();
-    expect(g.hasEngine, isTrue);
+  test(
+    'an engine that starts failing degrades instead of erroring every move',
+    () async {
+      final fake = FakeAnalyzer()..failFrom = 2;
+      final g = newGame(fake, autoplay: true);
+      g.feedbackMode = FeedbackMode.all;
+      await g.start();
+      expect(g.hasEngine, isTrue);
 
-    await g.playAt(2, 2);
-    expect(g.hasEngine, isFalse, reason: 'one failure is enough to stop asking');
-    expect(g.engineError, contains('inference failed'));
+      await g.playAt(2, 2);
+      expect(
+        g.hasEngine,
+        isFalse,
+        reason: 'one failure is enough to stop asking',
+      );
+      expect(g.engineError, contains('inference failed'));
 
-    final callsAfterFailure = fake.calls;
-    await g.playAt(4, 4);
-    expect(fake.calls, callsAfterFailure, reason: 'must not keep retrying');
-    expect(g.line.length, 3, reason: 'stones still go down');
-    expect(g.feedback, isNull);
-  });
+      final callsAfterFailure = fake.calls;
+      await g.playAt(4, 4);
+      expect(fake.calls, callsAfterFailure, reason: 'must not keep retrying');
+      expect(g.line.length, 3, reason: 'stones still go down');
+      expect(g.feedback, isNull);
+    },
+  );
 
-  test('the 9p heatmap reuses the profile the score already comes from', () async {
-    final fake = FakeAnalyzer();
-    final g = newGame(fake, autoplay: true);
-    g.feedbackMode = FeedbackMode.all;
-    await g.start();
-    await g.playAt(2, 2);
+  test(
+    'the 9p heatmap reuses the profile the score already comes from',
+    () async {
+      final fake = FakeAnalyzer();
+      final g = newGame(fake, autoplay: true);
+      g.feedbackMode = FeedbackMode.all;
+      await g.start();
+      await g.playAt(2, 2);
 
-    final before = fake.calls;
-    await g.setHeatmapMode(HeatmapMode.pro);
-    expect(g.heatmapProfile, kReferenceProfile);
-    expect(g.analysisFor(kReferenceProfile), isNotNull);
-    expect(fake.calls, before,
-        reason: 'the reference profile is already evaluated for the score');
-  });
+      final before = fake.calls;
+      await g.setHeatmapMode(HeatmapMode.pro);
+      expect(g.heatmapProfile, kReferenceProfile);
+      expect(g.analysisFor(kReferenceProfile), isNotNull);
+      expect(
+        fake.calls,
+        before,
+        reason: 'the reference profile is already evaluated for the score',
+      );
+    },
+  );
 
-  test('a score estimate is available with feedback and heatmap both off',
-      () async {
-    final fake = FakeAnalyzer();
-    final g = newGame(fake, autoplay: true);
-    g.feedbackMode = FeedbackMode.off;
-    await g.setHeatmapMode(HeatmapMode.off);
-    await g.start();
-    await g.playAt(2, 2);
+  test(
+    'a score estimate is available with feedback and heatmap both off',
+    () async {
+      final fake = FakeAnalyzer();
+      final g = newGame(fake, autoplay: true);
+      g.feedbackMode = FeedbackMode.off;
+      await g.setHeatmapMode(HeatmapMode.off);
+      await g.start();
+      await g.playAt(2, 2);
 
-    expect(g.feedback, isNull, reason: 'feedback is off');
-    expect(g.scoreLeadForBlack, isNotNull,
-        reason: 'the score does not depend on having asked for feedback');
-  });
+      expect(g.feedback, isNull, reason: 'feedback is off');
+      expect(
+        g.scoreLeadForBlack,
+        isNotNull,
+        reason: 'the score does not depend on having asked for feedback',
+      );
+    },
+  );
 
-  test('the opponent\'s own turn is not charged for a score nobody can read',
-      () async {
+  test('the opponent\'s own turn is not charged for a score nobody can read', () async {
     final fake = FakeAnalyzer();
     final g = newGame(fake, autoplay: true);
     g.feedbackMode = FeedbackMode.off;
@@ -540,9 +666,9 @@ void main() {
     final fake = FakeAnalyzer();
     final g = ShapeGame(fake, boardSize: 9, random: Random(2));
     fake.overrideFor = (profile, pos) => ProfileAnalysis(
-          profile == g.targetRank ? avoidsDiagonal(pos) : flatHalf(pos),
-          1.5,
-        );
+      profile == g.targetRank ? avoidsDiagonal(pos) : flatHalf(pos),
+      1.5,
+    );
     g.feedbackMode = FeedbackMode.all;
     g.autoplayOpponent = false;
     await g.start();
@@ -566,15 +692,27 @@ void main() {
 
     // Going back to the start already puts you on the first decision, since the
     // move you played from there is the one being discussed.
-    expect(g.cursor, first.depth - 1,
-        reason: 'the position you faced, not the one after you played');
-    expect(g.humanToPlay, isTrue, reason: 'so the heatmap paints and you can move');
+    expect(
+      g.cursor,
+      first.depth - 1,
+      reason: 'the position you faced, not the one after you played',
+    );
+    expect(
+      g.humanToPlay,
+      isTrue,
+      reason: 'so the heatmap paints and you can move',
+    );
     expect(identical(g.describedMove, first), isTrue);
-    expect(g.describedMoveIsPlayed, isFalse,
-        reason: 'it is a dot on the board, not a stone');
-    expect(g.nextMoves.map((n) => (n.x, n.y)),
-        contains((g.feedback!.x, g.feedback!.y)),
-        reason: 'the card and the dot must be the same move');
+    expect(
+      g.describedMoveIsPlayed,
+      isFalse,
+      reason: 'it is a dot on the board, not a stone',
+    );
+    expect(
+      g.nextMoves.map((n) => (n.x, n.y)),
+      contains((g.feedback!.x, g.feedback!.y)),
+      reason: 'the card and the dot must be the same move',
+    );
     expect(g.feedback!.isMistake, isTrue);
 
     // Forward then back returns to where it started.
@@ -622,8 +760,10 @@ void main() {
     await g.goFirst();
     final shown = g.nextMoves;
     expect(shown.map((n) => (n.x, n.y)), [(2, 2), (8, 8)]);
-    expect(shown.map((n) => n.isMainLine), [false, true],
-        reason: 'navigation follows the variation selected most recently');
+    expect(shown.map((n) => n.isMainLine), [
+      false,
+      true,
+    ], reason: 'navigation follows the variation selected most recently');
   });
 
   test('a pass is not drawn on the board as a continuation', () async {
@@ -638,8 +778,7 @@ void main() {
     expect(g.nextMoves, isEmpty, reason: 'but it has no point to draw');
   });
 
-  test('a position you are looking at is evaluated even on the opponent\'s turn',
-      () async {
+  test('a position you are looking at is evaluated even on the opponent\'s turn', () async {
     // Playing white means the opponent opens, so browsing back to the start lands
     // on a position where they are to move. Nothing is about to happen there --
     // you are looking at it -- so it needs everything a position on screen needs.
@@ -652,10 +791,16 @@ void main() {
 
     await g.goFirst();
     expect(g.humanToPlay, isFalse, reason: 'their turn, but on screen');
-    expect(g.activeProfiles, contains(g.playerRank),
-        reason: 'the heatmap you asked for must be evaluated');
-    expect(g.activeProfiles, contains(kReferenceProfile),
-        reason: 'and the score, which is always shown');
+    expect(
+      g.activeProfiles,
+      contains(g.playerRank),
+      reason: 'the heatmap you asked for must be evaluated',
+    );
+    expect(
+      g.activeProfiles,
+      contains(kReferenceProfile),
+      reason: 'and the score, which is always shown',
+    );
   });
 
   test('a rank changed while inference is running is still analysed', () async {
@@ -673,27 +818,35 @@ void main() {
     await firstChange;
 
     expect(g.targetRank, 'rank_1d');
-    expect(g.analysisFor('rank_1d'), isNotNull,
-        reason: 'the rank actually selected was never evaluated');
+    expect(
+      g.analysisFor('rank_1d'),
+      isNotNull,
+      reason: 'the rank actually selected was never evaluated',
+    );
   });
 
-  test('a rank changed while a move is being analysed is picked up after',
-      () async {
-    final fake = FakeAnalyzer();
-    final g = newGame(fake);
-    await g.start();
+  test(
+    'a rank changed while a move is being analysed is picked up after',
+    () async {
+      final fake = FakeAnalyzer();
+      final g = newGame(fake);
+      await g.start();
 
-    final gate = Completer<void>();
-    fake.blockNextAnalysis = gate;
-    final move = g.playAt(2, 2);
-    await g.setRanks(target: 'rank_9d');
-    gate.complete();
-    await move;
+      final gate = Completer<void>();
+      fake.blockNextAnalysis = gate;
+      final move = g.playAt(2, 2);
+      await g.setRanks(target: 'rank_9d');
+      gate.complete();
+      await move;
 
-    expect(g.targetRank, 'rank_9d');
-    expect(g.analysisFor('rank_9d'), isNotNull,
-        reason: 'a change made during a move must not be lost either');
-  });
+      expect(g.targetRank, 'rank_9d');
+      expect(
+        g.analysisFor('rank_9d'),
+        isNotNull,
+        reason: 'a change made during a move must not be lost either',
+      );
+    },
+  );
 
   test('timing is reported per evaluation, not per analysis call', () async {
     // A position needs one net call per profile, so the total for a call says
@@ -705,8 +858,11 @@ void main() {
     await g.playAt(2, 2);
 
     expect(g.analysisEvals, greaterThan(0));
-    expect(g.analysisEvals, fake.analyzedProfiles.last.length,
-        reason: 'the count must match what was actually asked of the engine');
+    expect(
+      g.analysisEvals,
+      fake.analyzedProfiles.last.length,
+      reason: 'the count must match what was actually asked of the engine',
+    );
     expect(g.msPerEval, g.analysisMs ~/ g.analysisEvals);
   });
 
@@ -714,30 +870,36 @@ void main() {
     final fake = FakeAnalyzer();
     final g = newGame(fake);
     fake.overrideFor = (profile, pos) => ProfileAnalysis(
-          flatHalf(pos),
-          0,
-          sideToMoveWinProb: switch (pos.moves.length) {
-            2 => 0.04,
-            4 => 0.03,
-            6 => 0.08,
-            8 => 0.11,
-            _ => 0.5,
-          },
-        );
+      flatHalf(pos),
+      0,
+      sideToMoveWinProb: switch (pos.moves.length) {
+        2 => 0.04,
+        4 => 0.03,
+        6 => 0.08,
+        8 => 0.11,
+        _ => 0.5,
+      },
+    );
     await g.start();
     expect(g.lowWinProbability, isNull);
 
     for (final p in const [(0, 0), (1, 1)]) {
       await g.playAt(p.$1, p.$2);
     }
-    expect(g.lowWinProbability, isNull,
-        reason: 'one low estimate is not enough');
+    expect(
+      g.lowWinProbability,
+      isNull,
+      reason: 'one low estimate is not enough',
+    );
 
     for (final p in const [(2, 2), (3, 3)]) {
       await g.playAt(p.$1, p.$2);
     }
-    expect(g.lowWinProbability, 0.03,
-        reason: 'two consecutive human turns below 5% show the note');
+    expect(
+      g.lowWinProbability,
+      0.03,
+      reason: 'two consecutive human turns below 5% show the note',
+    );
 
     g.setShowLowWinNote(false);
     expect(g.lowWinProbability, isNull);
@@ -747,14 +909,20 @@ void main() {
     for (final p in const [(4, 4), (5, 5)]) {
       await g.playAt(p.$1, p.$2);
     }
-    expect(g.lowWinProbability, 0.08,
-        reason: 'it stays visible below the 10% clear threshold');
+    expect(
+      g.lowWinProbability,
+      0.08,
+      reason: 'it stays visible below the 10% clear threshold',
+    );
 
     for (final p in const [(6, 6), (7, 7)]) {
       await g.playAt(p.$1, p.$2);
     }
-    expect(g.lowWinProbability, isNull,
-        reason: '10% hysteresis stops the note flickering around 5%');
+    expect(
+      g.lowWinProbability,
+      isNull,
+      reason: '10% hysteresis stops the note flickering around 5%',
+    );
   });
 
   test('every offered profile is one the encoder accepts', () {
@@ -774,21 +942,27 @@ void main() {
     // wrong one is exactly the mistake this replaced: a pro giving up on a game a
     // 5k can still win.
     fake.overrideFor = (profile, pos) => ProfileAnalysis(
-          flatHalf(pos),
-          0.0,
-          sideToMoveWinProb: profile == kReferenceProfile ? 0.01 : 0.08,
-        );
+      flatHalf(pos),
+      0.0,
+      sideToMoveWinProb: profile == kReferenceProfile ? 0.01 : 0.08,
+    );
     await g.start();
     // Two moves, so it is Black's turn again: the note is about your position.
     await g.playAt(2, 2);
     await g.playAt(4, 4);
 
-    expect(g.lowWinProbability, isNull,
-        reason: '8% at your rank is above the 5% default, whatever a pro thinks');
+    expect(
+      g.lowWinProbability,
+      isNull,
+      reason: '8% at your rank is above the 5% default, whatever a pro thinks',
+    );
 
     g.setLowWinThreshold(0.10);
-    expect(g.lowWinProbability, closeTo(0.08, 1e-9),
-        reason: 'two of your turns at or below the bar');
+    expect(
+      g.lowWinProbability,
+      closeTo(0.08, 1e-9),
+      reason: 'two of your turns at or below the bar',
+    );
 
     g.setShowLowWinNote(false);
     expect(g.lowWinProbability, isNull, reason: 'and it can be switched off');
@@ -798,7 +972,11 @@ void main() {
     final fake = FakeAnalyzer();
     final g = newGame(fake, autoplay: true);
     await g.start();
-    expect(g.cursor, 0, reason: 'as Black you open, so nothing has happened yet');
+    expect(
+      g.cursor,
+      0,
+      reason: 'as Black you open, so nothing has happened yet',
+    );
 
     await g.newGame(asColor: Board.white);
 
@@ -812,7 +990,11 @@ void main() {
     await g.playAt(4, 4);
     final yours = g.line[1];
     expect(yours.pla, Board.white);
-    expect(g.toSgf(), contains('PW[5k]'), reason: 'you are the White player now');
+    expect(
+      g.toSgf(),
+      contains('PW[5k]'),
+      reason: 'you are the White player now',
+    );
   });
 
   test('a new game keeps the colour you last chose', () async {
@@ -848,8 +1030,14 @@ void main() {
     await g.start();
     final b = g.pos.board;
     for (final (x, y) in [
-      (0, 2), (1, 1), (1, 3), (2, 1),
-      (2, 3), (4, 2), (3, 1), (3, 3),
+      (0, 2),
+      (1, 1),
+      (1, 3),
+      (2, 1),
+      (2, 3),
+      (4, 2),
+      (3, 1),
+      (3, 3),
     ]) {
       b.addUnsafe(Board.white, b.loc(x, y));
     }
@@ -874,8 +1062,11 @@ void main() {
 
     expect(g.busy, isTrue);
     await g.playAt(4, 4);
-    expect(g.line, isEmpty,
-        reason: 'moves must stay disabled during startup analysis');
+    expect(
+      g.line,
+      isEmpty,
+      reason: 'moves must stay disabled during startup analysis',
+    );
 
     blocker.complete();
     await reset;

@@ -47,23 +47,29 @@ void main() {
     // numbers know.
     final f = fb(playerProb: 0.10, targetProb: 0.30, pointsLost: 2.3);
     expect(f.verdict, MoveVerdict.costly);
-    expect(f.isMistake, isFalse, reason: 'the target-rank exception still applies');
+    expect(
+      f.isMistake,
+      isFalse,
+      reason: 'the target-rank exception still applies',
+    );
     expect(f.targetPlaysItToo, isTrue);
   });
 
-  test('the excuse needs the target to really play it, not just relatively often',
-      () {
-    // 1.5% against 6% clears the posterior gate on ratio alone, but saying "your
-    // target plays it too" about a move it plays 1.5% of the time is an endorsement
-    // nobody made.
-    final f = fb(playerProb: 0.06, targetProb: 0.016, pointsLost: 2.0);
-    expect(f.moveLikeTarget, greaterThan(kTargetRankThreshold));
-    expect(f.verdict, MoveVerdict.costly);
-    expect(f.targetPlaysItToo, isFalse);
+  test(
+    'the excuse needs the target to really play it, not just relatively often',
+    () {
+      // 1.5% against 6% clears the posterior gate on ratio alone, but saying "your
+      // target plays it too" about a move it plays 1.5% of the time is an endorsement
+      // nobody made.
+      final f = fb(playerProb: 0.06, targetProb: 0.016, pointsLost: 2.0);
+      expect(f.moveLikeTarget, greaterThan(kTargetRankThreshold));
+      expect(f.verdict, MoveVerdict.costly);
+      expect(f.targetPlaysItToo, isFalse);
 
-    final solid = fb(playerProb: 0.06, targetProb: 0.05, pointsLost: 2.0);
-    expect(solid.targetPlaysItToo, isTrue);
-  });
+      final solid = fb(playerProb: 0.06, targetProb: 0.05, pointsLost: 2.0);
+      expect(solid.targetPlaysItToo, isTrue);
+    },
+  );
 
   test('costly and rare is a mistake even if the ratio looks fine', () {
     // Both ranks under 1%: nobody plays this, so the ratio is meaningless.
@@ -86,8 +92,12 @@ void main() {
   test('a rare cheap move is not called typical', () {
     final f = fb(playerProb: 0.002, targetProb: 0.003, pointsLost: 0.1);
     expect(f.isRare, isTrue);
-    expect(f.verdict, MoveVerdict.typical,
-        reason: 'still the fallback bucket -- the card distinguishes it by isRare');
+    expect(
+      f.verdict,
+      MoveVerdict.typical,
+      reason:
+          'still the fallback bucket -- the card distinguishes it by isRare',
+    );
   });
 
   test('a gain is never costly', () {
@@ -126,12 +136,15 @@ void main() {
     expect(f.verdict, MoveVerdict.typical);
   });
 
-  test('the posterior floor stops vanishing probabilities faking confidence', () {
-    // Unfloored this is 0.917; floored, both sides sit at the floor -> 0.5.
-    expect(posteriorLikeTarget(0.000001, 0.000011), closeTo(0.5, 0.01));
-    // Real probabilities are untouched by the floor.
-    expect(posteriorLikeTarget(0.05, 0.20), closeTo(0.8, 0.001));
-  });
+  test(
+    'the posterior floor stops vanishing probabilities faking confidence',
+    () {
+      // Unfloored this is 0.917; floored, both sides sit at the floor -> 0.5.
+      expect(posteriorLikeTarget(0.000001, 0.000011), closeTo(0.5, 0.01));
+      // Real probabilities are untouched by the floor.
+      expect(posteriorLikeTarget(0.05, 0.20), closeTo(0.8, 0.001));
+    },
+  );
 
   test('the mistake bar can be moved without touching the other rules', () {
     // 2 points lost: a mistake at the default bar, not at a higher one, and the

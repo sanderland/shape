@@ -26,10 +26,13 @@ class PolicyData {
   final Uint8List _legal;
   late final double maxProb;
 
-  PolicyData(this.data, this.posLen, Board board,
-      {bool multiStoneSuicideLegal = false})
-      : boardSize = board.xSize,
-        _legal = Uint8List(board.xSize * board.ySize) {
+  PolicyData(
+    this.data,
+    this.posLen,
+    Board board, {
+    bool multiStoneSuicideLegal = false,
+  }) : boardSize = board.xSize,
+       _legal = Uint8List(board.xSize * board.ySize) {
     var m = 0.0;
     for (var y = 0; y < board.ySize; y++) {
       for (var x = 0; x < board.xSize; x++) {
@@ -74,7 +77,9 @@ class PolicyData {
         if (p > 0) moves.add(PolicyMove(x, y, p));
       }
     }
-    if (passProb > 0 && !excludePass) moves.add(PolicyMove(null, null, passProb));
+    if (passProb > 0 && !excludePass) {
+      moves.add(PolicyMove(null, null, passProb));
+    }
     if (moves.isEmpty) return const [];
 
     moves.sort((a, b) => b.prob.compareTo(a.prob));
@@ -121,7 +126,10 @@ class ProfileAnalysis {
 /// navigation, cache invalidation, opponent sampling -- without a 107 MB model.
 abstract class Analyzer {
   String get provider;
-  Future<Map<String, ProfileAnalysis>> analyze(GoPosition pos, List<String> profiles);
+  Future<Map<String, ProfileAnalysis>> analyze(
+    GoPosition pos,
+    List<String> profiles,
+  );
 }
 
 /// Why there is no engine. The message is written for the status line, not a log.
@@ -136,8 +144,8 @@ class EngineUnavailable implements Exception {
 /// without the platform wrapper or the Java class name in front of it.
 String describeFailure(Object e) {
   final s = '$e';
-  final wrapped =
-      RegExp(r'PlatformException\([^,]*,\s*(.*?),\s*null,\s*null\)').firstMatch(s);
+  final wrapped = RegExp(r'PlatformException\([^,]*,\s*(.*?),\s*null,\s*null\)')
+      .firstMatch(s);
   var out = (wrapped?.group(1) ?? s).split('\n').first.trim();
   out = out.replaceFirst(RegExp(r'^[A-Za-z_$]*(Exception|Error)\s*:\s*'), '');
   return out;
@@ -166,8 +174,9 @@ class ShapeEngine implements Analyzer {
   static Future<ShapeEngine> load({int posLen = 19}) async {
     if (await EngineTrial.takePreviousFailure()) {
       throw const EngineUnavailable(
-          'the previous model startup did not finish, so it was skipped once; '
-          'use Retry model to try again');
+        'the previous model startup did not finish, so it was skipped once; '
+        'use Retry model to try again',
+      );
     }
     await EngineTrial.begin();
     ShapeEngine? engine;
@@ -175,7 +184,9 @@ class ShapeEngine implements Analyzer {
       engine = ShapeEngine(await MnnRunner.load(), posLen: posLen);
       final check = await engine.verifyAgainstReference();
       if (!check.ok) {
-        throw EngineUnavailable('the net does not compute correctly here ($check)');
+        throw EngineUnavailable(
+          'the net does not compute correctly here ($check)',
+        );
       }
       // Only reached once a forward pass has returned. A hard fault never gets
       // here, which is the point of the breadcrumb.
@@ -202,17 +213,25 @@ class ShapeEngine implements Analyzer {
   /// the forward passes cannot be merged: batching measured slower on every
   /// runtime tried, and MNN's input shapes are pinned to a single row.
   @override
-  Future<Map<String, ProfileAnalysis>> analyze(GoPosition pos, List<String> profiles) async {
+  Future<Map<String, ProfileAnalysis>> analyze(
+    GoPosition pos,
+    List<String> profiles,
+  ) async {
     final f = features.fillRowFeatures(pos);
     final boardArea = pos.boardSize * pos.boardSize;
     final out = <String, ProfileAnalysis>{};
     for (final profile in profiles) {
-      final meta = getProfile(profile).getMetadataRow(pos.nextPlayer, boardArea);
+      final meta = getProfile(profile)
+          .getMetadataRow(pos.nextPlayer, boardArea);
       final o = await runner.run(f.bin, f.global, meta);
       final decisive = o.outcome[0] + o.outcome[1];
       out[profile] = ProfileAnalysis(
-        PolicyData(o.policy, posLen, pos.board,
-            multiStoneSuicideLegal: pos.rules.multiStoneSuicideLegal),
+        PolicyData(
+          o.policy,
+          posLen,
+          pos.board,
+          multiStoneSuicideLegal: pos.rules.multiStoneSuicideLegal,
+        ),
         o.lead,
         sideToMoveWinProb: decisive > 0 ? o.outcome[0] / decisive : null,
       );
